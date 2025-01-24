@@ -21,29 +21,13 @@ jobs:
 
     - name: Run tests with JSON output
       run: |
-        mkdir -p test-results
-        go test ./... -json > test-results/test.json || true
+        go test ./... -json > test.json
 
     - name: Generate test report
       run: |
-        go run main.go test-results/test.json || exit 1
+        go run main.go test.json
 
-    - name: Read test report
-      id: report
-      run: |
-        if [ -f "test_report.md" ]; then
-          echo "report<<EOF" >> $GITHUB_OUTPUT
-          cat test-report.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        else
-          echo "Error: test_report.md not found"
-          exit 1
-        fi
-
-    - name: Comment on PR
-      uses: thollander/actions-comment-pull-request@v2
+    - uses: mshick/add-pr-comment@v2
       with:
-        message: |
-          ## Test Results
-          ${{ steps.report.outputs.report }}
-        comment_tag: execution
+        message-id: test-report
+        message-path: test_report.md
