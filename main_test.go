@@ -1,328 +1,195 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jedib0t/go-pretty/v6/table"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestGenerateMarkdownReport(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    []TestResult
-		contains []string
+func TestProcessTestResults(t *testing.T) {
+	testCases := []struct {
+		name           string
+		inputResults   []TestResult
+		expectedOutput []PackageTestSummary
 	}{
 		{
-			name:     "Empty input",
-			input:    []TestResult{},
-			contains: []string{"# Go Test Report", "## Test Summary", "## 📊 Overall Summary"},
-		},
-		{
-			name: "Single package with passed test",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/foo",
-					Test:    "TestFoo",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/foo",
-					Test:    "TestFoo",
-					Elapsed: 1.5,
-					Output:  "test output",
-				},
+			name: "Mixed Test Results",
+			inputResults: []TestResult{
+				{Action: "run", Package: "pkg1", Test: "Test1"},
+				{Action: "pass", Package: "pkg1", Test: "Test1", Elapsed: 0.1},
+				{Action: "run", Package: "pkg1", Test: "Test2"},
+				{Action: "fail", Package: "pkg1", Test: "Test2", Output: "failed test"},
+				{Action: "run", Package: "pkg1", Test: "Test3"},
+				{Action: "skip", Package: "pkg1", Test: "Test3"},
 			},
-			contains: []string{
-				"📦 package/foo",
-				"100.0% Success",
-				"#### ✅ Passed Tests",
-				"TestFoo",
+			expectedOutput: []PackageTestSummary{
+				{
+					Package:      "pkg1",
+					TotalTests:   3,
+					PassedTests:  1,
+					FailedTests:  1,
+					SkippedTests: 1,
+					Duration:     time.Duration(100 * time.Millisecond),
+					TestDetails: map[string]TestDetailInfo{
+						"Test1": {Result: "PASS", Output: ""},
+						"Test2": {Result: "FAIL", Output: "failed test"},
+						"Test3": {Result: "SKIP", Output: ""},
+					},
+				},
 			},
 		},
 		{
-			name: "Single package with failed test",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/bar",
-					Test:    "TestBar",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "fail",
-					Package: "package/bar",
-					Test:    "TestBar",
-					Elapsed: 0.5,
-					Output:  "failure output",
-				},
-			},
-			contains: []string{
-				"📦 package/bar",
-				"0.0% Success",
-				"#### ❌ Failed Tests",
-				"TestBar",
-				"failure output",
-			},
+			name:           "Empty Input",
+			inputResults:   []TestResult{},
+			expectedOutput: []PackageTestSummary{},
 		},
 		{
-			name: "Multiple packages with mixed results",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/one",
-					Test:    "TestOne",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/one",
-					Test:    "TestOne",
-				},
-				{
-					Time:    "2023-01-01T10:00:02Z",
-					Action:  "run",
-					Package: "package/two",
-					Test:    "TestTwo",
-				},
-				{
-					Time:    "2023-01-01T10:00:03Z",
-					Action:  "skip",
-					Package: "package/two",
-					Test:    "TestTwo",
-					Output:  "skip reason",
-				},
+			name: "Multiple Packages",
+			inputResults: []TestResult{
+				{Action: "run", Package: "pkg1", Test: "Test1"},
+				{Action: "pass", Package: "pkg1", Test: "Test1"},
+				{Action: "run", Package: "pkg2", Test: "Test2"},
+				{Action: "fail", Package: "pkg2", Test: "Test2"},
 			},
-			contains: []string{
-				"📦 package/one",
-				"📦 package/two",
-				"#### ✅ Passed Tests",
-				"#### ⏭️ Skipped Tests",
-				"Total Packages | 2",
-			},
-		},
-		{
-			name: "Package with all test types",
-			input: []TestResult{
+			expectedOutput: []PackageTestSummary{
 				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/mixed",
-					Test:    "TestPass",
+					Package:      "pkg1",
+					TotalTests:   1,
+					PassedTests:  1,
+					FailedTests:  0,
+					SkippedTests: 0,
+					TestDetails: map[string]TestDetailInfo{
+						"Test1": {Result: "PASS", Output: ""},
+					},
 				},
 				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/mixed",
-					Test:    "TestPass",
+					Package:      "pkg2",
+					TotalTests:   1,
+					PassedTests:  0,
+					FailedTests:  1,
+					SkippedTests: 0,
+					TestDetails: map[string]TestDetailInfo{
+						"Test2": {Result: "FAIL", Output: ""},
+					},
 				},
-				{
-					Time:    "2023-01-01T10:00:02Z",
-					Action:  "run",
-					Package: "package/mixed",
-					Test:    "TestFail",
-				},
-				{
-					Time:    "2023-01-01T10:00:03Z",
-					Action:  "fail",
-					Package: "package/mixed",
-					Test:    "TestFail",
-				},
-				{
-					Time:    "2023-01-01T10:00:04Z",
-					Action:  "run",
-					Package: "package/mixed",
-					Test:    "TestSkip",
-				},
-				{
-					Time:    "2023-01-01T10:00:05Z",
-					Action:  "skip",
-					Package: "package/mixed",
-					Test:    "TestSkip",
-				},
-			},
-			contains: []string{
-				"📦 package/mixed",
-				"33.3% Success",
-				"#### ✅ Passed Tests",
-				"TestPass",
-				"#### ❌ Failed Tests",
-				"TestFail",
-				"#### ⏭️ Skipped Tests",
-				"TestSkip",
-			},
-		},
-		{
-			name: "Package with long test names",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/long",
-					Test:    "TestVeryLongTestNameWithMultipleWordsAndNumbers123",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/long",
-					Test:    "TestVeryLongTestNameWithMultipleWordsAndNumbers123",
-					Output:  "test output with long\nmultiline\noutput\n",
-				},
-			},
-			contains: []string{
-				"TestVeryLongTestNameWithMultipleWordsAndNumbers123",
-				"test output with long\nmultiline\noutput",
-			},
-		},
-		{
-			name: "Package with special characters",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/special-chars!@#$%^&*()",
-					Test:    "Test_Special_Chars!@#$%^&*()",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/special-chars!@#$%^&*()",
-					Test:    "Test_Special_Chars!@#$%^&*()",
-				},
-			},
-			contains: []string{
-				"package/special-chars!@#$%^&*()",
-				"Test_Special_Chars!@#$%^&*()",
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := generateMarkdownReport(tt.input)
-
-			for _, expected := range tt.contains {
-				if !strings.Contains(got, expected) {
-					t.Errorf("generateMarkdownReport() output does not contain expected string: %q", expected)
-				}
-			}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := processTestResults(tc.inputResults)
+			assert.Equal(t, tc.expectedOutput, result)
 		})
 	}
 }
 
-func TestGenerateMarkdownReportStructure(t *testing.T) {
-	input := []TestResult{
-		{
-			Time:    "2023-01-01T10:00:00Z",
-			Action:  "run",
-			Package: "package/test",
-			Test:    "TestExample",
-		},
-		{
-			Time:    "2023-01-01T10:00:01Z",
-			Action:  "pass",
-			Package: "package/test",
-			Test:    "TestExample",
-			Elapsed: 1.0,
-			Output:  "test output",
-		},
-	}
-
-	got := generateMarkdownReport(input)
-
-	// Test for required sections
-	requiredHeaders := []string{
-		"# Go Test Report",
-		"## Test Summary",
-		"## 📊 Overall Summary",
-	}
-
-	for _, header := range requiredHeaders {
-		if !strings.Contains(got, header) {
-			t.Errorf("Missing required header: %s", header)
-		}
-	}
-
-	// Test for table headers
-	requiredTables := []string{
-		"| Metric | Count | Status |",
-		"| Metric | Count |",
-	}
-
-	for _, table := range requiredTables {
-		if !strings.Contains(got, table) {
-			t.Errorf("Missing required table header: %s", table)
-		}
-	}
-
-	// Test for details tags
-	if !strings.Contains(got, "<details>") || !strings.Contains(got, "</details>") {
-		t.Error("Missing details tags in the report")
-	}
-}
-
-func TestCalculatePercentage(t *testing.T) {
-	tests := []struct {
-		name     string
-		part     int
-		total    int
-		expected float64
+func TestGenerateEnhancedReport(t *testing.T) {
+	testCases := []struct {
+		name           string
+		inputResults   []TestResult
+		expectedOutput func(string) bool
 	}{
-		{"Zero total", 5, 0, 0},
-		{"Zero part", 0, 10, 0},
-		{"Full percentage", 10, 10, 100},
-		{"Half percentage", 5, 10, 50},
-		{"Partial percentage", 3, 10, 30},
-		{"Large numbers", 1000, 2000, 50},
-		// {"Decimal result", 1, 3, 33.333333},
-		{"Negative part", -5, 10, -50},
-		{"Both negative", -5, -10, 50},
-		{"Negative total", 5, -10, -50},
+		{
+			name: "Basic Report Generation",
+			inputResults: []TestResult{
+				{Action: "run", Package: "pkg1", Test: "Test1"},
+				{Action: "pass", Package: "pkg1", Test: "Test1"},
+			},
+			expectedOutput: func(report string) bool {
+				return strings.Contains(report, "Go Test Report") &&
+					strings.Contains(report, "Total Tests") &&
+					strings.Contains(report, "Passed Tests")
+			},
+		},
+		{
+			name: "Multiple Package Report",
+			inputResults: []TestResult{
+				{Action: "run", Package: "pkg1", Test: "Test1"},
+				{Action: "pass", Package: "pkg1", Test: "Test1"},
+				{Action: "run", Package: "pkg2", Test: "Test2"},
+				{Action: "fail", Package: "pkg2", Test: "Test2"},
+			},
+			expectedOutput: func(report string) bool {
+				return strings.Contains(report, "pkg1") &&
+					strings.Contains(report, "pkg2") &&
+					strings.Contains(report, "Passed Tests") &&
+					strings.Contains(report, "Failed Tests")
+			},
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := calculatePercentage(tt.part, tt.total)
-			if got != tt.expected {
-				t.Errorf("calculatePercentage(%d, %d) = %f; want %f",
-					tt.part, tt.total, got, tt.expected)
-			}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			report := generateEnhancedReport(tc.inputResults)
+			assert.True(t, tc.expectedOutput(report))
 		})
 	}
 }
 
-func TestGetColorForPercentage(t *testing.T) {
-	tests := []struct {
+func TestGenerateOverallSummaryTable(t *testing.T) {
+	testCases := []struct {
 		name       string
-		percentage float64
-		want       string
+		summaries  []PackageTestSummary
+		assertions func(table.Writer) bool
 	}{
-		{"Perfect score", 100.0, "brightgreen"},
-		{"Very high score", 95.0, "brightgreen"},
-		{"High score", 85.0, "green"},
-		{"Medium score", 60.0, "yellow"},
-		{"Low score", 30.0, "red"},
-		{"Zero score", 0.0, "red"},
-		{"Negative score", -10.0, "red"},
-		{"Boundary - just brightgreen", 90.0, "brightgreen"},
-		{"Boundary - just green", 75.0, "green"},
-		{"Boundary - just yellow", 50.0, "yellow"},
-		{"Very high decimal", 99.99, "brightgreen"},
-		{"High decimal", 89.99, "green"},
-		{"Medium decimal", 74.99, "yellow"},
-		{"Low decimal", 49.99, "red"},
+		{
+			name: "Single Package Summary",
+			summaries: []PackageTestSummary{
+				{
+					Package:      "pkg1",
+					TotalTests:   10,
+					PassedTests:  8,
+					FailedTests:  1,
+					SkippedTests: 1,
+					Duration:     time.Second,
+				},
+			},
+			assertions: func(w table.Writer) bool {
+				rendered := w.Render()
+				return strings.Contains(rendered, "Total Packages") &&
+					strings.Contains(rendered, "Total Tests") &&
+					strings.Contains(rendered, "Passed Tests") &&
+					strings.Contains(rendered, "80.0%")
+			},
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getColorForPercentage(tt.percentage)
-			if got != tt.want {
-				t.Errorf("getColorForPercentage(%f) = %s; want %s",
-					tt.percentage, got, tt.want)
-			}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			summaryTable := generateOverallSummaryTable(tc.summaries)
+			assert.True(t, tc.assertions(summaryTable))
 		})
 	}
+}
+
+// Performance and Edge Case Test
+func BenchmarkProcessTestResults(b *testing.B) {
+	largeTestResults := generateLargeTestResultSet(1000)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		processTestResults(largeTestResults)
+	}
+}
+
+func generateLargeTestResultSet(count int) []TestResult {
+	results := make([]TestResult, 0, count)
+	packages := []string{"pkg1", "pkg2", "pkg3"}
+	actions := []string{"run", "pass", "fail", "skip"}
+
+	for i := 0; i < count; i++ {
+		result := TestResult{
+			Package: packages[i%len(packages)],
+			Test:    fmt.Sprintf("Test%d", i),
+			Action:  actions[i%len(actions)],
+			Elapsed: float64(i) * 0.01,
+		}
+		results = append(results, result)
+	}
+
+	return results
 }

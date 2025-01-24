@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/jedib0t/go-pretty/v6/table"
+	"github.com/jedib0t/go-pretty/v6/text"
 )
 
 type TestResult struct {
@@ -18,193 +22,196 @@ type TestResult struct {
 	Output  string  `json:"Output"`
 }
 
-type TestSummary struct {
-	Package        string
-	TotalTests     int
-	PassedTests    int
-	FailedTests    int
-	SkippedTests   int
-	Duration       time.Duration
-	TestResults    []TestResult
-	PassedDetails  map[string]string
-	FailedDetails  map[string]string
-	SkippedDetails map[string]string
+type PackageTestSummary struct {
+	Package      string
+	TotalTests   int
+	PassedTests  int
+	FailedTests  int
+	SkippedTests int
+	Duration     time.Duration
+	TestDetails  map[string]TestDetailInfo
 }
 
-func calculatePercentage(part, total int) float64 {
-	if total == 0 {
-		return 0
+type TestDetailInfo struct {
+	Result string
+	Output string
+}
+
+func generateEnhancedReport(testResults []TestResult) string {
+	packageSummaries := processTestResults(testResults)
+	var reportBuilder strings.Builder
+
+	// Overall Summary Section
+	reportBuilder.WriteString("# 🧪 Go Test Report\n\n")
+	reportBuilder.WriteString(fmt.Sprintf("📅 Generated: %s\n\n", time.Now().Format(time.RFC1123)))
+
+	// Overall Summary Table
+	overallSummaryTable := generateOverallSummaryTable(packageSummaries)
+	reportBuilder.WriteString("## 📊 Overall Test Summary\n\n")
+	reportBuilder.WriteString(fmt.Sprintf("```\n%s\n```\n\n", overallSummaryTable.Render()))
+
+	// Detailed Package Report
+	reportBuilder.WriteString("## 📦 Package Test Details\n\n")
+	for _, summary := range packageSummaries {
+		packageDetailTable := generatePackageDetailTable(summary)
+		reportBuilder.WriteString(fmt.Sprintf("### Package: `%s`\n\n", summary.Package))
+		reportBuilder.WriteString(fmt.Sprintf("```\n%s\n```\n\n", packageDetailTable.Render()))
+
+		// Test Details Section
+		if len(summary.TestDetails) > 0 {
+			reportBuilder.WriteString("#### Test Case Details\n\n")
+			testDetailsTable := generateTestDetailsTable(summary.TestDetails)
+			reportBuilder.WriteString(fmt.Sprintf("```\n%s\n```\n\n", testDetailsTable.Render()))
+		}
 	}
-	return float64(part) * 100 / float64(total)
+
+	return reportBuilder.String()
 }
 
-func generateMarkdownReport(testResults []TestResult) string {
-	packageSummaries := make(map[string]*TestSummary)
+func processTestResults(testResults []TestResult) []PackageTestSummary {
+	packageMap := make(map[string]*PackageTestSummary)
 
-	// Single pass processing with improved error handling
 	for _, result := range testResults {
 		if result.Package == "" {
 			continue
 		}
 
-		if _, exists := packageSummaries[result.Package]; !exists {
-			packageSummaries[result.Package] = &TestSummary{
-				Package:        result.Package,
-				PassedDetails:  make(map[string]string),
-				FailedDetails:  make(map[string]string),
-				SkippedDetails: make(map[string]string),
+		if _, exists := packageMap[result.Package]; !exists {
+			packageMap[result.Package] = &PackageTestSummary{
+				Package:     result.Package,
+				TestDetails: make(map[string]TestDetailInfo),
 			}
 		}
 
-		summary := packageSummaries[result.Package]
+		pkg := packageMap[result.Package]
 
-		// Handle test actions with proper counting
 		switch result.Action {
 		case "run":
-			if result.Test != "" { // Only count named tests
-				summary.TotalTests++
+			if result.Test != "" {
+				pkg.TotalTests++
 			}
 		case "pass":
 			if result.Test != "" {
-				summary.PassedTests++
-				summary.PassedDetails[result.Test] = strings.TrimSpace(result.Output)
+				pkg.PassedTests++
+				pkg.TestDetails[result.Test] = TestDetailInfo{Result: "PASS", Output: result.Output}
 			}
 		case "fail":
 			if result.Test != "" {
-				summary.FailedTests++
-				summary.FailedDetails[result.Test] = strings.TrimSpace(result.Output)
+				pkg.FailedTests++
+				pkg.TestDetails[result.Test] = TestDetailInfo{Result: "FAIL", Output: result.Output}
 			}
 		case "skip":
 			if result.Test != "" {
-				summary.SkippedTests++
-				summary.SkippedDetails[result.Test] = strings.TrimSpace(result.Output)
+				pkg.SkippedTests++
+				pkg.TestDetails[result.Test] = TestDetailInfo{Result: "SKIP", Output: result.Output}
 			}
 		}
 
-		// Accumulate duration properly
 		if result.Elapsed > 0 {
-			summary.Duration += time.Duration(result.Elapsed * float64(time.Second))
+			pkg.Duration += time.Duration(result.Elapsed * float64(time.Second))
 		}
 	}
 
-	var report strings.Builder
-	report.WriteString("# Go Test Report\n\n")
-	report.WriteString(fmt.Sprintf("Generated at: %s\n\n", time.Now().Format(time.RFC1123)))
-	report.WriteString("## Test Summary\n\n")
-
-	// Track totals with proper initialization
-	totals := struct {
-		packages, tests, passed, failed, skipped int
-		duration                                 time.Duration
-	}{}
-
-	// Generate package summaries with improved formatting
-	for _, summary := range packageSummaries {
-		totals.packages++
-		totals.tests += summary.TotalTests
-		totals.passed += summary.PassedTests
-		totals.failed += summary.FailedTests
-		totals.skipped += summary.SkippedTests
-		totals.duration += summary.Duration
-
-		passRate := calculatePercentage(summary.PassedTests, summary.TotalTests)
-
-		// Use consistent emoji and better spacing
-		report.WriteString(fmt.Sprintf("<details>\n<summary><strong>📦 %s</strong> (%.1f%% Success)</summary>\n\n",
-			sanitizePackageName(summary.Package), passRate))
-
-		// Add table headers with proper alignment
-		report.WriteString("| Metric | Count | Status |\n")
-		report.WriteString("|:-------|:------:|:-------|\n")
-		report.WriteString(fmt.Sprintf("| Total Tests | %d | |\n", summary.TotalTests))
-		report.WriteString(fmt.Sprintf("| Passed | %d | ![](https://img.shields.io/badge/passed-%d-%%2373D216) |\n",
-			summary.PassedTests, summary.PassedTests))
-		report.WriteString(fmt.Sprintf("| Failed | %d | ![](https://img.shields.io/badge/failed-%d-red) |\n",
-			summary.FailedTests, summary.FailedTests))
-		report.WriteString(fmt.Sprintf("| Skipped | %d | ![](https://img.shields.io/badge/skipped-%d-yellow) |\n",
-			summary.SkippedTests, summary.SkippedTests))
-		report.WriteString(fmt.Sprintf("| Duration | %s | |\n\n", formatDuration(summary.Duration)))
-
-		// Write test details sections with consistent formatting
-		writeTestDetails(&report, "✅ Passed Tests", summary.PassedDetails)
-		writeTestDetails(&report, "❌ Failed Tests", summary.FailedDetails)
-		writeTestDetails(&report, "⏭️ Skipped Tests", summary.SkippedDetails)
-
-		report.WriteString("</details>\n\n")
+	// Convert map to sorted slice
+	summaries := make([]PackageTestSummary, 0, len(packageMap))
+	for _, summary := range packageMap {
+		summaries = append(summaries, *summary)
 	}
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].Package < summaries[j].Package
+	})
 
-	// Write overall summary with proper formatting
-	writeOverallSummary(&report, totals)
-
-	return report.String()
+	return summaries
 }
 
-// Helper function to format test details sections
-func writeTestDetails(report *strings.Builder, title string, details map[string]string) {
-	if len(details) > 0 {
-		report.WriteString(fmt.Sprintf("#### %s\n\n", title))
-		for testName, output := range details {
-			report.WriteString(fmt.Sprintf("<details>\n<summary><code>%s</code></summary>\n\n", testName))
-			if output != "" {
-				report.WriteString("```\n" + output + "```\n")
-			}
-			report.WriteString("</details>\n\n")
+func generateOverallSummaryTable(summaries []PackageTestSummary) table.Writer {
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredBright)
+	t.Style().Options.SeparateColumns = true
+	t.Style().Options.DrawBorder = true
+
+	var totalTests, totalPassed, totalFailed, totalSkipped int
+	var totalDuration time.Duration
+
+	for _, summary := range summaries {
+		totalTests += summary.TotalTests
+		totalPassed += summary.PassedTests
+		totalFailed += summary.FailedTests
+		totalSkipped += summary.SkippedTests
+		totalDuration += summary.Duration
+	}
+
+	t.AppendHeader(table.Row{"Metric", "Count", "Percentage"})
+	t.AppendRows([]table.Row{
+		{"Total Packages", len(summaries), ""},
+		{"Total Tests", totalTests, "100%"},
+		{"Passed Tests", totalPassed, fmt.Sprintf("%.1f%%", float64(totalPassed)/float64(totalTests)*100)},
+		{"Failed Tests", totalFailed, fmt.Sprintf("%.1f%%", float64(totalFailed)/float64(totalTests)*100)},
+		{"Skipped Tests", totalSkipped, fmt.Sprintf("%.1f%%", float64(totalSkipped)/float64(totalTests)*100)},
+		{"Total Duration", totalDuration.Round(time.Millisecond), ""},
+	})
+
+	return t
+}
+
+func generatePackageDetailTable(summary PackageTestSummary) table.Writer {
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredBright)
+	t.Style().Options.SeparateColumns = true
+	t.Style().Options.DrawBorder = true
+
+	t.AppendHeader(table.Row{"Metric", "Count", "Percentage"})
+	t.AppendRows([]table.Row{
+		{"Total Tests", summary.TotalTests, "100%"},
+		{"Passed Tests", summary.PassedTests, fmt.Sprintf("%.1f%%", float64(summary.PassedTests)/float64(summary.TotalTests)*100)},
+		{"Failed Tests", summary.FailedTests, fmt.Sprintf("%.1f%%", float64(summary.FailedTests)/float64(summary.TotalTests)*100)},
+		{"Skipped Tests", summary.SkippedTests, fmt.Sprintf("%.1f%%", float64(summary.SkippedTests)/float64(summary.TotalTests)*100)},
+		{"Duration", summary.Duration.Round(time.Millisecond), ""},
+	})
+
+	return t
+}
+
+func generateTestDetailsTable(details map[string]TestDetailInfo) table.Writer {
+	t := table.NewWriter()
+	t.SetStyle(table.StyleColoredBright)
+	t.Style().Options.SeparateColumns = true
+	t.Style().Options.DrawBorder = true
+
+	t.AppendHeader(table.Row{"Test Name", "Result", "Output"})
+
+	for testName, detail := range details {
+		var color text.Color
+		switch detail.Result {
+		case "PASS":
+			color = text.FgGreen
+		case "FAIL":
+			color = text.FgRed
+		case "SKIP":
+			color = text.FgYellow
 		}
+
+		trimmedOutput := detail.Output
+		if len(trimmedOutput) > 50 {
+			trimmedOutput = trimmedOutput[:50] + "..."
+		}
+
+		t.AppendRow(table.Row{
+			testName,
+			text.Colors{color}.Sprint(detail.Result),
+			trimmedOutput,
+		})
 	}
-}
 
-// Helper function to write overall summary section
-func writeOverallSummary(report *strings.Builder, totals struct {
-	packages, tests, passed, failed, skipped int
-	duration                                 time.Duration
-},
-) {
-	totalPassRate := calculatePercentage(totals.passed, totals.tests)
-	report.WriteString("## 📊 Overall Summary\n\n")
-	report.WriteString(fmt.Sprintf("![](https://img.shields.io/badge/Total%%20Success-%.1f%%25-%s)\n\n",
-		totalPassRate, getColorForPercentage(totalPassRate)))
-
-	report.WriteString("| Metric | Count |\n")
-	report.WriteString("|:-------|:------|\n")
-	report.WriteString(fmt.Sprintf("| Total Packages | %d |\n", totals.packages))
-	report.WriteString(fmt.Sprintf("| Total Tests | %d |\n", totals.tests))
-	report.WriteString(fmt.Sprintf("| Total Passed | %d |\n", totals.passed))
-	report.WriteString(fmt.Sprintf("| Total Failed | %d |\n", totals.failed))
-	report.WriteString(fmt.Sprintf("| Total Skipped | %d |\n", totals.skipped))
-	report.WriteString(fmt.Sprintf("| Total Duration | %s |\n", formatDuration(totals.duration)))
-}
-
-// Helper function to format duration
-func formatDuration(d time.Duration) string {
-	return d.Round(time.Millisecond).String()
-}
-
-// Helper function to sanitize package names
-func sanitizePackageName(name string) string {
-	return strings.TrimSpace(name)
-}
-
-func getColorForPercentage(percentage float64) string {
-	switch {
-	case percentage >= 90:
-		return "brightgreen"
-	case percentage >= 75:
-		return "green"
-	case percentage >= 50:
-		return "yellow"
-	default:
-		return "red"
-	}
+	return t
 }
 
 func main() {
-	// Check if a test.json file is provided as an argument
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: go run test-report-generator.go test.json")
 		os.Exit(1)
 	}
 
-	// Read the test.json file
 	filename := os.Args[1]
 	content, err := os.ReadFile(filename)
 	if err != nil {
@@ -212,7 +219,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse JSON lines
 	var testResults []TestResult
 	decoder := json.NewDecoder(strings.NewReader(string(content)))
 	for decoder.More() {
@@ -225,10 +231,8 @@ func main() {
 		testResults = append(testResults, result)
 	}
 
-	// Generate markdown report
-	markdownReport := generateMarkdownReport(testResults)
+	markdownReport := generateEnhancedReport(testResults)
 
-	// Write report to a markdown file
 	outputFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + "_report.md"
 	err = os.WriteFile(outputFilename, []byte(markdownReport), 0o644)
 	if err != nil {
@@ -236,5 +240,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Markdown report generated: %s\n", outputFilename)
+	fmt.Printf("Enhanced markdown report generated: %s\n", outputFilename)
 }
