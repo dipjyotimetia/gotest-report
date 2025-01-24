@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,7 +150,7 @@ func main() {
 
 	// Write report to a markdown file
 	outputFilename := strings.TrimSuffix(filename, filepath.Ext(filename)) + "_report.md"
-	err = ioutil.WriteFile(outputFilename, []byte(markdownReport), 0o644)
+	err = os.WriteFile(outputFilename, []byte(markdownReport), 0o644)
 	if err != nil {
 		fmt.Printf("Error writing markdown report: %v\n", err)
 		os.Exit(1)
