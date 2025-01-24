@@ -19,14 +19,16 @@ type TestResult struct {
 }
 
 type TestSummary struct {
-	Package       string
-	TotalTests    int
-	PassedTests   int
-	FailedTests   int
-	SkippedTests  int
-	Duration      time.Duration
-	TestResults   []TestResult
-	FailedDetails map[string]string
+	Package        string
+	TotalTests     int
+	PassedTests    int
+	FailedTests    int
+	SkippedTests   int
+	Duration       time.Duration
+	TestResults    []TestResult
+	PassedDetails  map[string]string
+	FailedDetails  map[string]string
+	SkippedDetails map[string]string
 }
 
 func calculatePercentage(part, total int) float64 {
@@ -47,8 +49,10 @@ func generateMarkdownReport(testResults []TestResult) string {
 
 		if _, exists := packageSummaries[result.Package]; !exists {
 			packageSummaries[result.Package] = &TestSummary{
-				Package:       result.Package,
-				FailedDetails: make(map[string]string),
+				Package:        result.Package,
+				PassedDetails:  make(map[string]string),
+				FailedDetails:  make(map[string]string),
+				SkippedDetails: make(map[string]string),
 			}
 		}
 
@@ -59,6 +63,9 @@ func generateMarkdownReport(testResults []TestResult) string {
 			summary.TotalTests++
 		case "pass":
 			summary.PassedTests++
+			if result.Test != "" {
+				summary.PassedDetails[result.Test] = result.Output
+			}
 		case "fail":
 			summary.FailedTests++
 			if result.Test != "" {
@@ -66,6 +73,9 @@ func generateMarkdownReport(testResults []TestResult) string {
 			}
 		case "skip":
 			summary.SkippedTests++
+			if result.Test != "" {
+				summary.SkippedDetails[result.Test] = result.Output
+			}
 		}
 
 		if result.Elapsed > 0 {
@@ -108,11 +118,33 @@ func generateMarkdownReport(testResults []TestResult) string {
 			summary.SkippedTests, summary.SkippedTests))
 		report.WriteString(fmt.Sprintf("| Duration | %s | |\n\n", summary.Duration.Round(time.Millisecond)))
 
+		if len(summary.PassedDetails) > 0 {
+			report.WriteString("#### ✅ Passed Tests\n\n")
+			for testName, output := range summary.PassedDetails {
+				report.WriteString(fmt.Sprintf("<details>\n<summary><code>%s</code></summary>\n\n", testName))
+				if output != "" {
+					report.WriteString("```\n" + output + "```\n")
+				}
+				report.WriteString("</details>\n\n")
+			}
+		}
+
 		if len(summary.FailedDetails) > 0 {
 			report.WriteString("#### ❌ Failed Tests\n\n")
 			for testName, output := range summary.FailedDetails {
 				report.WriteString(fmt.Sprintf("<details>\n<summary><code>%s</code></summary>\n\n", testName))
 				report.WriteString("```\n" + output + "```\n</details>\n\n")
+			}
+		}
+
+		if len(summary.SkippedDetails) > 0 {
+			report.WriteString("#### ⏭️ Skipped Tests\n\n")
+			for testName, output := range summary.SkippedDetails {
+				report.WriteString(fmt.Sprintf("<details>\n<summary><code>%s</code></summary>\n\n", testName))
+				if output != "" {
+					report.WriteString("```\n" + output + "```\n")
+				}
+				report.WriteString("</details>\n\n")
 			}
 		}
 		report.WriteString("</details>\n\n")
