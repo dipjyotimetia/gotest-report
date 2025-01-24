@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// TestResult represents the structure of a single test result from go test -json output
 type TestResult struct {
 	Time    string  `json:"Time"`
 	Action  string  `json:"Action"`
@@ -19,37 +18,42 @@ type TestResult struct {
 	Output  string  `json:"Output"`
 }
 
-// TestSummary aggregates test results by package
 type TestSummary struct {
-	Package      string
-	TotalTests   int
-	PassedTests  int
-	FailedTests  int
-	SkippedTests int
-	Duration     time.Duration
-	TestResults  []TestResult
+	Package       string
+	TotalTests    int
+	PassedTests   int
+	FailedTests   int
+	SkippedTests  int
+	Duration      time.Duration
+	TestResults   []TestResult
+	FailedDetails map[string]string
+}
+
+func calculatePercentage(part, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(part) * 100 / float64(total)
 }
 
 func generateMarkdownReport(testResults []TestResult) string {
-	// Group test results by package
 	packageSummaries := make(map[string]*TestSummary)
 
+	// Single pass processing
 	for _, result := range testResults {
 		if result.Package == "" {
 			continue
 		}
 
-		// Initialize package summary if not exists
 		if _, exists := packageSummaries[result.Package]; !exists {
 			packageSummaries[result.Package] = &TestSummary{
-				Package: result.Package,
+				Package:       result.Package,
+				FailedDetails: make(map[string]string),
 			}
 		}
 
 		summary := packageSummaries[result.Package]
-		summary.TestResults = append(summary.TestResults, result)
 
-		// Count test statuses
 		switch result.Action {
 		case "run":
 			summary.TotalTests++
@@ -57,64 +61,92 @@ func generateMarkdownReport(testResults []TestResult) string {
 			summary.PassedTests++
 		case "fail":
 			summary.FailedTests++
+			if result.Test != "" {
+				summary.FailedDetails[result.Test] = result.Output
+			}
 		case "skip":
 			summary.SkippedTests++
 		}
 
-		// Track duration
 		if result.Elapsed > 0 {
 			summary.Duration += time.Duration(result.Elapsed * float64(time.Second))
 		}
 	}
 
-	// Generate markdown report
 	var report strings.Builder
-	report.WriteString("# Go Test Report\n\n")
+	report.WriteString(fmt.Sprintf("# Go Test Report\n\n"))
+	report.WriteString(fmt.Sprintf("Generated at: %s\n\n", time.Now().Format(time.RFC1123)))
 	report.WriteString("## Test Summary\n\n")
 
-	var totalPackages, totalTests, totalPassed, totalFailed, totalSkipped int
-	totalDuration := time.Duration(0)
+	totals := struct {
+		packages, tests, passed, failed, skipped int
+		duration                                 time.Duration
+	}{}
 
+	// Generate package summaries
 	for _, summary := range packageSummaries {
-		totalPackages++
-		totalTests += summary.TotalTests
-		totalPassed += summary.PassedTests
-		totalFailed += summary.FailedTests
-		totalSkipped += summary.SkippedTests
-		totalDuration += summary.Duration
+		totals.packages++
+		totals.tests += summary.TotalTests
+		totals.passed += summary.PassedTests
+		totals.failed += summary.FailedTests
+		totals.skipped += summary.SkippedTests
+		totals.duration += summary.Duration
 
-		report.WriteString(fmt.Sprintf("### Package: `%s`\n\n", summary.Package))
-		report.WriteString(fmt.Sprintf("- **Total Tests:** %d\n", summary.TotalTests))
-		report.WriteString(fmt.Sprintf("- **Passed:** %d ✅\n", summary.PassedTests))
-		report.WriteString(fmt.Sprintf("- **Failed:** %d ❌\n", summary.FailedTests))
-		report.WriteString(fmt.Sprintf("- **Skipped:** %d ⏩\n", summary.SkippedTests))
-		report.WriteString(fmt.Sprintf("- **Duration:** %s\n\n", summary.Duration.Round(time.Millisecond)))
+		passRate := calculatePercentage(summary.PassedTests, summary.TotalTests)
 
-		// Detailed test results
-		if summary.FailedTests > 0 {
-			report.WriteString("#### Failed Tests\n\n")
-			for _, result := range summary.TestResults {
-				if result.Action == "fail" {
-					report.WriteString(fmt.Sprintf("- **%s**\n", result.Test))
-					if result.Output != "" {
-						report.WriteString(fmt.Sprintf("  ```\n%s  ```\n", result.Output))
-					}
-				}
+		report.WriteString(fmt.Sprintf("<details>\n<summary><strong>📦 %s</strong> (%.1f%% Success)</summary>\n\n",
+			summary.Package, passRate))
+
+		report.WriteString("| Metric | Count | Status |\n")
+		report.WriteString("|--------|--------|--------|\n")
+		report.WriteString(fmt.Sprintf("| Total Tests | %d | |\n", summary.TotalTests))
+		report.WriteString(fmt.Sprintf("| Passed | %d | ![](https://img.shields.io/badge/passed-%d-%%2373D216) |\n",
+			summary.PassedTests, summary.PassedTests))
+		report.WriteString(fmt.Sprintf("| Failed | %d | ![](https://img.shields.io/badge/failed-%d-red) |\n",
+			summary.FailedTests, summary.FailedTests))
+		report.WriteString(fmt.Sprintf("| Skipped | %d | ![](https://img.shields.io/badge/skipped-%d-yellow) |\n",
+			summary.SkippedTests, summary.SkippedTests))
+		report.WriteString(fmt.Sprintf("| Duration | %s | |\n\n", summary.Duration.Round(time.Millisecond)))
+
+		if len(summary.FailedDetails) > 0 {
+			report.WriteString("#### ❌ Failed Tests\n\n")
+			for testName, output := range summary.FailedDetails {
+				report.WriteString(fmt.Sprintf("<details>\n<summary><code>%s</code></summary>\n\n", testName))
+				report.WriteString("```\n" + output + "```\n</details>\n\n")
 			}
-			report.WriteString("\n")
 		}
+		report.WriteString("</details>\n\n")
 	}
 
 	// Overall summary
-	report.WriteString("## Overall Summary\n\n")
-	report.WriteString(fmt.Sprintf("- **Total Packages:** %d\n", totalPackages))
-	report.WriteString(fmt.Sprintf("- **Total Tests:** %d\n", totalTests))
-	report.WriteString(fmt.Sprintf("- **Total Passed:** %d ✅\n", totalPassed))
-	report.WriteString(fmt.Sprintf("- **Total Failed:** %d ❌\n", totalFailed))
-	report.WriteString(fmt.Sprintf("- **Total Skipped:** %d ⏩\n", totalSkipped))
-	report.WriteString(fmt.Sprintf("- **Total Duration:** %s\n", totalDuration.Round(time.Millisecond)))
+	totalPassRate := calculatePercentage(totals.passed, totals.tests)
+	report.WriteString("## 📊 Overall Summary\n\n")
+	report.WriteString(fmt.Sprintf("![](https://img.shields.io/badge/Total%%20Success-%.1f%%25-%s)\n\n",
+		totalPassRate, getColorForPercentage(totalPassRate)))
+
+	report.WriteString("| Metric | Count |\n")
+	report.WriteString("|--------|--------|\n")
+	report.WriteString(fmt.Sprintf("| Total Packages | %d |\n", totals.packages))
+	report.WriteString(fmt.Sprintf("| Total Tests | %d |\n", totals.tests))
+	report.WriteString(fmt.Sprintf("| Total Passed | %d |\n", totals.passed))
+	report.WriteString(fmt.Sprintf("| Total Failed | %d |\n", totals.failed))
+	report.WriteString(fmt.Sprintf("| Total Skipped | %d |\n", totals.skipped))
+	report.WriteString(fmt.Sprintf("| Total Duration | %s |\n", totals.duration.Round(time.Millisecond)))
 
 	return report.String()
+}
+
+func getColorForPercentage(percentage float64) string {
+	switch {
+	case percentage >= 90:
+		return "brightgreen"
+	case percentage >= 75:
+		return "green"
+	case percentage >= 50:
+		return "yellow"
+	default:
+		return "red"
+	}
 }
 
 func main() {
