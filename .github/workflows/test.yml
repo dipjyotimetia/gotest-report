@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,13 +21,29 @@ jobs:
 
     - name: Run tests with JSON output
       run: |
-        go test ./... -json > test.json
+        mkdir -p test-results
+        go test ./... -json > test-results/test.json || true
 
     - name: Generate test report
       run: |
-        go run main.go test.json
+        go run main.go test-results/test.json || exit 1
 
-    - uses: mshick/add-pr-comment@v2
+    - name: Read test report
+      id: report
+      run: |
+        if [ -f "test-report.md" ]; then
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          cat test-report.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          echo "Error: test-report.md not found"
+          exit 1
+        fi
+
+    - name: Comment on PR
+      uses: thollander/actions-comment-pull-request@v2
       with:
-        message-id: test-report
-        message-path: test-report.md
+        message: |
+          ## Test Results
+          ${{ steps.report.outputs.report }}
+        comment_tag: execution
