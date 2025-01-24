@@ -31,12 +31,12 @@ jobs:
     - name: Read test report
       id: report
       run: |
-        if [ -f "test-report.md" ]; then
+        if [ -f "test_report.md" ]; then
           echo "report<<EOF" >> $GITHUB_OUTPUT
           cat test-report.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
         else
-          echo "Error: test-report.md not found"
+          echo "Error: test_report.md not found"
           exit 1
         fi
 
