@@ -23,40 +23,10 @@ jobs:
       run: |
         go test ./... -json > test-output.json || true
 
-    - name: Generate test report
-      run: |
-        go run main.go -input test-output.json -output test-report.md
-
-    - name: Upload Test Report
-      uses: actions/upload-artifact@v4
+    - name: Generate and Comment Test Report
+      uses: ./
       with:
-        name: test-report
-        path: test-report.md
-
-    - name: Find Comment
-      uses: peter-evans/find-comment@v3
-      id: find-comment
-      with:
-        issue-number: ${{ github.event.pull_request.number }}
-        comment-author: 'github-actions[bot]'
-        body-includes: Test Report
-
-    - name: Read Test Report
-      id: test-report
-      if: github.event_name == 'pull_request'
-      run: |
-        echo "REPORT<<EOF" >> $GITHUB_ENV
-        cat test-report.md >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
-
-    - name: Comment PR with Test Report
-      if: github.event_name == 'pull_request'
-      uses: peter-evans/create-or-update-comment@v4
-      with:
-        issue-number: ${{ github.event.pull_request.number }}
-        comment-id: ${{ steps.find-comment.outputs.comment-id }}
-        body: |
-          # Test Report
-
-          ${{ env.REPORT }}
-        edit-mode: replace
+        test-json-file: test-output.json
+        output-file: test-report.md
+        comment-pr: true
+        fail-on-test-failure: false

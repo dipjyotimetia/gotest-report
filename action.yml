@@ -1,0 +1,83 @@
+name: 'Go Test Report'
+description: 'Generate beautiful Markdown reports from Go test output'
+author: 'dipjyotimetia'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  test-json-file:
+    description: 'Path to the go test -json output file'
+    required: false
+    default: 'test-output.json'
+  output-file:
+    description: 'Path for the generated Markdown report'
+    required: false
+    default: 'test-report.md'
+  comment-pr:
+    description: 'Whether to comment the PR with the test report'
+    required: false
+    default: 'true'
+  fail-on-test-failure:
+    description: 'Whether to fail the GitHub Action if any tests fail'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Generate test report
+      shell: bash
+      run: |
+        go run ${{ github.action_path }}/main.go -input "${{ inputs.test-json-file }}" -output "${{ inputs.output-file }}"
+        
+    - name: Upload Test Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-report
+        path: ${{ inputs.output-file }}
+
+    - name: Check for test failures
+      if: ${{ inputs.fail-on-test-failure == 'true' }}
+      shell: bash
+      run: |
+        # Check if the test report contains 'FAILED'
+        if grep -q "Status-FAILED" "${{ inputs.output-file }}"; then
+          echo "Tests failed, failing the workflow as requested"
+          exit 1
+        fi
+
+    - name: Find Comment
+      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+      uses: peter-evans/find-comment@v3
+      id: find-comment
+      with:
+        issue-number: ${{ github.event.pull_request.number }}
+        comment-author: 'github-actions[bot]'
+        body-includes: Test Report
+
+    - name: Read Test Report
+      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+      id: test-report
+      shell: bash
+      run: |
+        echo "REPORT<<EOF" >> $GITHUB_ENV
+        cat "${{ inputs.output-file }}" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+
+    - name: Comment PR with Test Report
+      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+      uses: peter-evans/create-or-update-comment@v4
+      with:
+        issue-number: ${{ github.event.pull_request.number }}
+        comment-id: ${{ steps.find-comment.outputs.comment-id }}
+        body: |
+          # Test Report
+
+          ${{ env.REPORT }}
+        edit-mode: replace

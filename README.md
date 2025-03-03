@@ -1,6 +1,6 @@
 # Go Test Report Generator
 
-A command-line tool that generates beautiful Markdown reports from Go test output in JSON format. Designed to be easily integrated with GitHub Actions and other CI systems.
+A command-line tool and GitHub Action that generates beautiful Markdown reports from Go test output in JSON format.
 
 ## Features
 
@@ -17,21 +17,80 @@ A command-line tool that generates beautiful Markdown reports from Go test outpu
   - Test durations with visual bar charts for the longest tests
   - Detailed failure information for debugging
 - CI/CD integration:
-  - GitHub Actions workflow included for automatic PR comments
-
-## Installation
-
-```sh
-go install github.com/dipjyotimetia/gotest-report@latest
-```
+  - GitHub Actions workflow included
+  - Can be used as a GitHub Action or standalone CLI tool
 
 ## Usage
 
+### As a GitHub Action
+
+Add the following to your workflow file:
+
+```yml
+- name: Run Go tests with JSON output
+  run: go test ./... -json > test-output.json || true
+
+- name: Generate Test Report
+  uses: dipjyotimetia/gotest-report@v1
+  with:
+    test-json-file: test-output.json
+    output-file: test-report.md
+    comment-pr: true
+    fail-on-test-failure: false
+```
+
+### Action Inputs
+
+| Input | Description | Required | Default |
+| ----- | ----------- | -------- | ------- |
+| test-json-file | Path to the go test -json output file | No | test-output.json |
+| output-file | Path for the generated Markdown report | No | test-report.md |
+| comment-pr | Whether to comment the PR with the test report | No | true |
+| fail-on-test-failure | Whether to fail the GitHub Action if any tests fail | No | false |
+
+### Complete GitHub Workflow Example
+
+```yml
+name: Go Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Run tests with JSON output
+      run: |
+        go test ./... -json > test-output.json || true
+
+    - name: Generate and Comment Test Report
+      uses: dipjyotimetia/gotest-report@v1
+      with:
+        test-json-file: test-output.json
+        comment-pr: true
+```
+
 ### Command Line
 
-Run your Go tests with JSON output and pipe to the tool:
+You can also use this tool directly as a CLI application:
 
 ```sh
+# Install
+go install github.com/dipjyotimetia/gotest-report@latest
+
 # Option 1: Pipe directly
 go test ./... -json | gotest-report
 
@@ -47,50 +106,6 @@ gotest-report -input test-output.json -output test-report.md
         go test -json output file (default is stdin)
   -output string
         Output markdown file (default "test-report.md")
-```
-
-### GitHub Actions Integration
-
-Add the following workflow to your repository (`.github/workflows/test.yml`):
-
-```yml
-name: Go Test Report
-
-on:
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  pull-requests: write
-  contents: read
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go: [ '1.12', '1.23', '1.24' ]
-    name: Go ${{ matrix.go }} sample
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup go
-      uses: actions/setup-go@v5
-      with:
-        go-version: ${{ matrix.go }}
-        
-    - name: Run tests with JSON output
-      run: |
-        go test ./... -json > test-output.json  
-
-    - name: Generate test report
-      run: |
-        go run main.go -input test-output.json -output test-report.md
-
-    - uses: mshick/add-pr-comment@v2
-      with:
-        message-id: test-report
-        message-path: test_report.md
 ```
 
 ## Output Format
