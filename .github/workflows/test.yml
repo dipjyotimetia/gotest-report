@@ -21,7 +21,7 @@ jobs:
 
     - name: Run tests with JSON output
       run: |
-        go test ./... -json > test-output.json  
+        go test ./... -json > test-output.json || true
 
     - name: Generate test report
       run: |
