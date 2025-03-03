@@ -7,322 +7,415 @@ import (
 
 func TestGenerateMarkdownReport(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    []TestResult
-		contains []string
-	}{
-		{
-			name:     "Empty input",
-			input:    []TestResult{},
-			contains: []string{"# Go Test Report", "## Test Summary", "## 📊 Overall Summary"},
-		},
-		{
-			name: "Single package with passed test",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/foo",
-					Test:    "TestFoo",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/foo",
-					Test:    "TestFoo",
-					Elapsed: 1.5,
-					Output:  "test output",
-				},
-			},
-			contains: []string{
-				"📦 package/foo",
-				"100.0% Success",
-				"#### ✅ Passed Tests",
-				"TestFoo",
-			},
-		},
-		{
-			name: "Single package with failed test",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/bar",
-					Test:    "TestBar",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "fail",
-					Package: "package/bar",
-					Test:    "TestBar",
-					Elapsed: 0.5,
-					Output:  "failure output",
-				},
-			},
-			contains: []string{
-				"📦 package/bar",
-				"0.0% Success",
-				"#### ❌ Failed Tests",
-				"TestBar",
-				"failure output",
-			},
-		},
-		{
-			name: "Multiple packages with mixed results",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/one",
-					Test:    "TestOne",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/one",
-					Test:    "TestOne",
-				},
-				{
-					Time:    "2023-01-01T10:00:02Z",
-					Action:  "run",
-					Package: "package/two",
-					Test:    "TestTwo",
-				},
-				{
-					Time:    "2023-01-01T10:00:03Z",
-					Action:  "skip",
-					Package: "package/two",
-					Test:    "TestTwo",
-					Output:  "skip reason",
-				},
-			},
-			contains: []string{
-				"📦 package/one",
-				"📦 package/two",
-				"#### ✅ Passed Tests",
-				"#### ⏭️ Skipped Tests",
-				"Total Packages | 2",
-			},
-		},
-		{
-			name: "Package with all test types",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/mixed",
-					Test:    "TestPass",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/mixed",
-					Test:    "TestPass",
-				},
-				{
-					Time:    "2023-01-01T10:00:02Z",
-					Action:  "run",
-					Package: "package/mixed",
-					Test:    "TestFail",
-				},
-				{
-					Time:    "2023-01-01T10:00:03Z",
-					Action:  "fail",
-					Package: "package/mixed",
-					Test:    "TestFail",
-				},
-				{
-					Time:    "2023-01-01T10:00:04Z",
-					Action:  "run",
-					Package: "package/mixed",
-					Test:    "TestSkip",
-				},
-				{
-					Time:    "2023-01-01T10:00:05Z",
-					Action:  "skip",
-					Package: "package/mixed",
-					Test:    "TestSkip",
-				},
-			},
-			contains: []string{
-				"📦 package/mixed",
-				"33.3% Success",
-				"#### ✅ Passed Tests",
-				"TestPass",
-				"#### ❌ Failed Tests",
-				"TestFail",
-				"#### ⏭️ Skipped Tests",
-				"TestSkip",
-			},
-		},
-		{
-			name: "Package with long test names",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/long",
-					Test:    "TestVeryLongTestNameWithMultipleWordsAndNumbers123",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/long",
-					Test:    "TestVeryLongTestNameWithMultipleWordsAndNumbers123",
-					Output:  "test output with long\nmultiline\noutput\n",
-				},
-			},
-			contains: []string{
-				"TestVeryLongTestNameWithMultipleWordsAndNumbers123",
-				"test output with long\nmultiline\noutput",
-			},
-		},
-		{
-			name: "Package with special characters",
-			input: []TestResult{
-				{
-					Time:    "2023-01-01T10:00:00Z",
-					Action:  "run",
-					Package: "package/special-chars!@#$%^&*()",
-					Test:    "Test_Special_Chars!@#$%^&*()",
-				},
-				{
-					Time:    "2023-01-01T10:00:01Z",
-					Action:  "pass",
-					Package: "package/special-chars!@#$%^&*()",
-					Test:    "Test_Special_Chars!@#$%^&*()",
-				},
-			},
-			contains: []string{
-				"package/special-chars!@#$%^&*()",
-				"Test_Special_Chars!@#$%^&*()",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := generateMarkdownReport(tt.input)
-
-			for _, expected := range tt.contains {
-				if !strings.Contains(got, expected) {
-					t.Errorf("generateMarkdownReport() output does not contain expected string: %q", expected)
-				}
-			}
-		})
-	}
-}
-
-func TestGenerateMarkdownReportStructure(t *testing.T) {
-	input := []TestResult{
-		{
-			Time:    "2023-01-01T10:00:00Z",
-			Action:  "run",
-			Package: "package/test",
-			Test:    "TestExample",
-		},
-		{
-			Time:    "2023-01-01T10:00:01Z",
-			Action:  "pass",
-			Package: "package/test",
-			Test:    "TestExample",
-			Elapsed: 1.0,
-			Output:  "test output",
-		},
-	}
-
-	got := generateMarkdownReport(input)
-
-	// Test for required sections
-	requiredHeaders := []string{
-		"# Go Test Report",
-		"## Test Summary",
-		"## 📊 Overall Summary",
-	}
-
-	for _, header := range requiredHeaders {
-		if !strings.Contains(got, header) {
-			t.Errorf("Missing required header: %s", header)
-		}
-	}
-
-	// Test for table headers
-	requiredTables := []string{
-		"| Metric | Count | Status |",
-		"| Metric | Count |",
-	}
-
-	for _, table := range requiredTables {
-		if !strings.Contains(got, table) {
-			t.Errorf("Missing required table header: %s", table)
-		}
-	}
-
-	// Test for details tags
-	if !strings.Contains(got, "<details>") || !strings.Contains(got, "</details>") {
-		t.Error("Missing details tags in the report")
-	}
-}
-
-func TestCalculatePercentage(t *testing.T) {
-	tests := []struct {
-		name     string
-		part     int
-		total    int
-		expected float64
-	}{
-		{"Zero total", 5, 0, 0},
-		{"Zero part", 0, 10, 0},
-		{"Full percentage", 10, 10, 100},
-		{"Half percentage", 5, 10, 50},
-		{"Partial percentage", 3, 10, 30},
-		{"Large numbers", 1000, 2000, 50},
-		// {"Decimal result", 1, 3, 33.333333},
-		{"Negative part", -5, 10, -50},
-		{"Both negative", -5, -10, 50},
-		{"Negative total", 5, -10, -50},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := calculatePercentage(tt.part, tt.total)
-			if got != tt.expected {
-				t.Errorf("calculatePercentage(%d, %d) = %f; want %f",
-					tt.part, tt.total, got, tt.expected)
-			}
-		})
-	}
-}
-
-func TestGetColorForPercentage(t *testing.T) {
-	tests := []struct {
 		name       string
-		percentage float64
-		want       string
+		reportData *ReportData
+		checks     []func(t *testing.T, markdown string)
 	}{
-		{"Perfect score", 100.0, "brightgreen"},
-		{"Very high score", 95.0, "brightgreen"},
-		{"High score", 85.0, "green"},
-		{"Medium score", 60.0, "yellow"},
-		{"Low score", 30.0, "red"},
-		{"Zero score", 0.0, "red"},
-		{"Negative score", -10.0, "red"},
-		{"Boundary - just brightgreen", 90.0, "brightgreen"},
-		{"Boundary - just green", 75.0, "green"},
-		{"Boundary - just yellow", 50.0, "yellow"},
-		{"Very high decimal", 99.99, "brightgreen"},
-		{"High decimal", 89.99, "green"},
-		{"Medium decimal", 74.99, "yellow"},
-		{"Low decimal", 49.99, "red"},
+		{
+			name: "all tests passed",
+			reportData: &ReportData{
+				TotalTests:    3,
+				PassedTests:   3,
+				FailedTests:   0,
+				SkippedTests:  0,
+				TotalDuration: 1.234,
+				SortedTestNames: []string{
+					"TestOne",
+					"TestTwo",
+					"TestThree",
+				},
+				Results: map[string]*TestResult{
+					"TestOne": {
+						Name:      "TestOne",
+						Package:   "pkg/one",
+						Status:    "PASS",
+						Duration:  0.5,
+						IsSubTest: false,
+						Output:    []string{"=== RUN TestOne", "--- PASS: TestOne (0.50s)"},
+					},
+					"TestTwo": {
+						Name:      "TestTwo",
+						Package:   "pkg/one",
+						Status:    "PASS",
+						Duration:  0.4,
+						IsSubTest: false,
+						SubTests:  []string{"TestTwo/SubTest1", "TestTwo/SubTest2"},
+						Output:    []string{"=== RUN TestTwo", "--- PASS: TestTwo (0.40s)"},
+					},
+					"TestTwo/SubTest1": {
+						Name:       "TestTwo/SubTest1",
+						Package:    "pkg/one",
+						Status:     "PASS",
+						Duration:   0.2,
+						ParentTest: "TestTwo",
+						IsSubTest:  true,
+						Output:     []string{"=== RUN TestTwo/SubTest1", "--- PASS: TestTwo/SubTest1 (0.20s)"},
+					},
+					"TestTwo/SubTest2": {
+						Name:       "TestTwo/SubTest2",
+						Package:    "pkg/one",
+						Status:     "PASS",
+						Duration:   0.2,
+						ParentTest: "TestTwo",
+						IsSubTest:  true,
+						Output:     []string{"=== RUN TestTwo/SubTest2", "--- PASS: TestTwo/SubTest2 (0.20s)"},
+					},
+					"TestThree": {
+						Name:      "TestThree",
+						Package:   "pkg/two",
+						Status:    "PASS",
+						Duration:  0.334,
+						IsSubTest: false,
+						Output:    []string{"=== RUN TestThree", "--- PASS: TestThree (0.33s)"},
+					},
+				},
+			},
+			checks: []func(t *testing.T, markdown string){
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "**Total Tests:** 3") {
+						t.Errorf("Expected total tests count not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "**Passed:** 3 (100.0%)") {
+						t.Errorf("Expected passed tests percentage not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "![Status](https://img.shields.io/badge/Status-PASSED-brightgreen)") {
+						t.Errorf("Expected passed status badge not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "✅ PASS") {
+						t.Errorf("Expected pass emoji not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if strings.Contains(markdown, "## Failed Tests Details") {
+						t.Errorf("Failed tests section should not be present when all tests pass: %s", markdown)
+					}
+				},
+			},
+		},
+		{
+			name: "tests with failures",
+			reportData: &ReportData{
+				TotalTests:    3,
+				PassedTests:   1,
+				FailedTests:   2,
+				SkippedTests:  0,
+				TotalDuration: 1.234,
+				SortedTestNames: []string{
+					"TestOne",
+					"TestTwo",
+				},
+				Results: map[string]*TestResult{
+					"TestOne": {
+						Name:      "TestOne",
+						Package:   "pkg/one",
+						Status:    "PASS",
+						Duration:  0.5,
+						IsSubTest: false,
+						Output:    []string{"=== RUN TestOne", "--- PASS: TestOne (0.50s)"},
+					},
+					"TestTwo": {
+						Name:      "TestTwo",
+						Package:   "pkg/one",
+						Status:    "FAIL",
+						Duration:  0.7,
+						IsSubTest: false,
+						SubTests:  []string{"TestTwo/SubTest1"},
+						Output:    []string{"=== RUN TestTwo", "--- FAIL: TestTwo (0.70s)", "    error_test.go:123: unexpected error"},
+					},
+					"TestTwo/SubTest1": {
+						Name:       "TestTwo/SubTest1",
+						Package:    "pkg/one",
+						Status:     "FAIL",
+						Duration:   0.2,
+						ParentTest: "TestTwo",
+						IsSubTest:  true,
+						Output:     []string{"=== RUN TestTwo/SubTest1", "--- FAIL: TestTwo/SubTest1 (0.20s)", "    subtest_error.go:45: failed assertion"},
+					},
+				},
+			},
+			checks: []func(t *testing.T, markdown string){
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "**Failed:** 2") {
+						t.Errorf("Expected failed tests count not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "![Status](https://img.shields.io/badge/Status-FAILED-red)") {
+						t.Errorf("Expected failed status badge not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "❌ FAIL") {
+						t.Errorf("Expected fail emoji not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "## Failed Tests Details") {
+						t.Errorf("Failed tests section should be present when tests fail: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "unexpected error") {
+						t.Errorf("Failed test error message not found in output: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "failed assertion") {
+						t.Errorf("Failed subtest error message not found in output: %s", markdown)
+					}
+				},
+			},
+		},
+		{
+			name: "tests with skips",
+			reportData: &ReportData{
+				TotalTests:    3,
+				PassedTests:   1,
+				FailedTests:   0,
+				SkippedTests:  2,
+				TotalDuration: 0.8,
+				SortedTestNames: []string{
+					"TestPass",
+					"TestSkip1",
+					"TestSkip2",
+				},
+				Results: map[string]*TestResult{
+					"TestPass": {
+						Name:      "TestPass",
+						Package:   "pkg/one",
+						Status:    "PASS",
+						Duration:  0.5,
+						IsSubTest: false,
+						Output:    []string{"=== RUN TestPass", "--- PASS: TestPass (0.50s)"},
+					},
+					"TestSkip1": {
+						Name:      "TestSkip1",
+						Package:   "pkg/one",
+						Status:    "SKIP",
+						Duration:  0.1,
+						IsSubTest: false,
+						Output:    []string{"=== RUN TestSkip1", "--- SKIP: TestSkip1 (0.10s)", "    skip_test.go:45: skipping for now"},
+					},
+					"TestSkip2": {
+						Name:      "TestSkip2",
+						Package:   "pkg/two",
+						Status:    "SKIP",
+						Duration:  0.2,
+						IsSubTest: false,
+						Output:    []string{"=== RUN TestSkip2", "--- SKIP: TestSkip2 (0.20s)", "    skip_test.go:55: not implemented"},
+					},
+				},
+			},
+			checks: []func(t *testing.T, markdown string){
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "**Skipped:** 2") {
+						t.Errorf("Expected skipped tests count not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "⏭️ SKIP") {
+						t.Errorf("Expected skip emoji not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					// When not all tests are skipped, we use the passed badge since there are passes
+					if !strings.Contains(markdown, "![Status](https://img.shields.io/badge/Status-PASSED-brightgreen)") {
+						t.Errorf("Expected passed status badge when some tests pass and others are skipped: %s", markdown)
+					}
+				},
+			},
+		},
+		{
+			name: "all tests skipped",
+			reportData: &ReportData{
+				TotalTests:    2,
+				PassedTests:   0,
+				FailedTests:   0,
+				SkippedTests:  2,
+				TotalDuration: 0.3,
+				SortedTestNames: []string{
+					"TestSkip1",
+					"TestSkip2",
+				},
+				Results: map[string]*TestResult{
+					"TestSkip1": {
+						Name:      "TestSkip1",
+						Package:   "pkg/one",
+						Status:    "SKIP",
+						Duration:  0.1,
+						IsSubTest: false,
+						Output:    []string{"=== RUN TestSkip1", "--- SKIP: TestSkip1 (0.10s)"},
+					},
+					"TestSkip2": {
+						Name:      "TestSkip2",
+						Package:   "pkg/two",
+						Status:    "SKIP",
+						Duration:  0.2,
+						IsSubTest: false,
+						Output:    []string{"=== RUN TestSkip2", "--- SKIP: TestSkip2 (0.20s)"},
+					},
+				},
+			},
+			checks: []func(t *testing.T, markdown string){
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "**Skipped:** 2") {
+						t.Errorf("Expected skipped tests count not found in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "![Status](https://img.shields.io/badge/Status-SKIPPED-yellow)") {
+						t.Errorf("Expected skipped status badge not found when all tests are skipped: %s", markdown)
+					}
+				},
+			},
+		},
+		{
+			name: "duration metrics formatting",
+			reportData: &ReportData{
+				TotalTests:    3,
+				PassedTests:   3,
+				FailedTests:   0,
+				SkippedTests:  0,
+				TotalDuration: 1.234,
+				SortedTestNames: []string{
+					"TestA",
+					"TestB",
+					"TestC",
+				},
+				Results: map[string]*TestResult{
+					"TestA": {
+						Name:      "TestA",
+						Package:   "pkg/x",
+						Status:    "PASS",
+						Duration:  0.8,
+						IsSubTest: false,
+					},
+					"TestB": {
+						Name:      "TestB",
+						Package:   "pkg/x",
+						Status:    "PASS",
+						Duration:  0.3,
+						IsSubTest: false,
+					},
+					"TestC": {
+						Name:      "TestC",
+						Package:   "pkg/y",
+						Status:    "PASS",
+						Duration:  0.134,
+						IsSubTest: false,
+					},
+				},
+			},
+			checks: []func(t *testing.T, markdown string){
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "## Test Durations") {
+						t.Errorf("Test durations section missing in: %s", markdown)
+					}
+				},
+				func(t *testing.T, markdown string) {
+					// Check that durationBar exists and TestA has more blocks than TestB
+					// We can't check for exact blocks since the implementation may change
+					lines := strings.Split(markdown, "\n")
+					var testALine, testBLine string
+
+					for _, line := range lines {
+						if strings.Contains(line, "TestA") && strings.Contains(line, "0.800s") {
+							testALine = line
+						}
+						if strings.Contains(line, "TestB") && strings.Contains(line, "0.300s") {
+							testBLine = line
+						}
+					}
+
+					if testALine == "" || testBLine == "" {
+						t.Errorf("Expected to find test duration lines for TestA and TestB")
+						return
+					}
+
+					if !strings.Contains(testALine, "█") {
+						t.Errorf("Expected to find block characters in the duration bar for TestA")
+					}
+
+					testABlocks := strings.Count(testALine, "█")
+					testBBlocks := strings.Count(testBLine, "█")
+
+					if testABlocks <= testBBlocks {
+						t.Errorf("Expected TestA to have more duration blocks than TestB: TestA=%d blocks, TestB=%d blocks",
+							testABlocks, testBBlocks)
+					}
+				},
+			},
+		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getColorForPercentage(tt.percentage)
-			if got != tt.want {
-				t.Errorf("getColorForPercentage(%f) = %s; want %s",
-					tt.percentage, got, tt.want)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			markdown := generateMarkdownReport(tc.reportData)
+
+			for _, check := range tc.checks {
+				check(t, markdown)
 			}
 		})
+	}
+}
+
+func TestReportFormattingAndStructure(t *testing.T) {
+	// Basic structure test
+	reportData := &ReportData{
+		TotalTests:      1,
+		PassedTests:     1,
+		FailedTests:     0,
+		SkippedTests:    0,
+		TotalDuration:   0.5,
+		SortedTestNames: []string{"TestSimple"},
+		Results: map[string]*TestResult{
+			"TestSimple": {
+				Name:      "TestSimple",
+				Package:   "pkg",
+				Status:    "PASS",
+				Duration:  0.5,
+				IsSubTest: false,
+			},
+		},
+	}
+
+	markdown := generateMarkdownReport(reportData)
+
+	expectedSections := []string{
+		"# Go Test Results",
+		"## Summary",
+		"## Test Status",
+		"## Test Results",
+		"## Test Durations",
+	}
+
+	for _, section := range expectedSections {
+		if !strings.Contains(markdown, section) {
+			t.Errorf("Expected section not found: %s", section)
+		}
+	}
+
+	// Check that tables have headers
+	expectedTableHeaders := []string{
+		"| Test | Status | Duration |",
+		"| Test | Duration |",
+	}
+
+	for _, header := range expectedTableHeaders {
+		if !strings.Contains(markdown, header) {
+			t.Errorf("Expected table header not found: %s", header)
+		}
+	}
+
+	// Check footer timestamp format - just check for "Report generated at:" text
+	// instead of specific timestamp format which may change
+	if !strings.Contains(markdown, "Report generated at:") {
+		t.Errorf("Expected 'Report generated at:' in footer not found")
 	}
 }
