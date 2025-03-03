@@ -1,4 +1,4 @@
-name: 'GoTest Markdown Report'
+name: 'GoTest Action Report'
 description: 'Generate beautiful Markdown reports from Go test output'
 author: 'dipjyotimetia'
 branding:
