@@ -20,6 +20,34 @@ A command-line tool and GitHub Action that generates beautiful Markdown reports 
   - GitHub Actions workflow included
   - Can be used as a GitHub Action or standalone CLI tool
 
+## Sequence Diagram
+```mermaid
+sequenceDiagram
+    participant D as Developer
+    participant GH as GitHub
+    participant GA as GitHub Actions
+    participant GT as Go Test
+    participant TR as Test Reporter
+    participant PR as Pull Request
+
+    D->>GH: Create/Update PR
+    GH->>GA: Trigger Workflow
+    GA->>GT: Run Go Tests with JSON output
+    GT->>GA: Return test.json output
+    GA->>TR: Process test.json
+    
+    Note over TR: Parse JSON events
+    Note over TR: Aggregate test results
+    Note over TR: Calculate statistics
+    Note over TR: Generate Markdown report
+    
+    TR->>GA: Return Markdown report
+    GA->>GH: Upload report as artifact
+    GA->>PR: Comment with test report
+    
+    D->>PR: View test report
+```
+
 ## Usage
 
 ### As a GitHub Action
