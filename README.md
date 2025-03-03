@@ -29,13 +29,14 @@ sequenceDiagram
     participant GT as Go Test
     participant TR as Test Reporter
     participant PR as Pull Request
-
+    
     D->>GH: Create/Update PR
     GH->>GA: Trigger Workflow
+    
     GA->>GT: Run Go Tests with JSON output
     GT->>GA: Return test.json output
-    GA->>TR: Process test.json
     
+    GA->>TR: Process test.json
     Note over TR: Parse JSON events
     Note over TR: Aggregate test results
     Note over TR: Calculate statistics
@@ -43,9 +44,19 @@ sequenceDiagram
     
     TR->>GA: Return Markdown report
     GA->>GH: Upload report as artifact
-    GA->>PR: Comment with test report
     
-    D->>PR: View test report
+    alt Comment PR is enabled
+        GA->>PR: Find existing comment or create new
+        GA->>PR: Comment PR with test report
+    end
+    
+    alt Fail on Test Failure is enabled
+        GA->>GA: Check if any tests failed
+        GA->>GA: Fail workflow if tests failed
+    end
+    
+    D->>PR: View test report and comments
+    D->>GH: Download report artifact
 ```
 
 ## Usage
