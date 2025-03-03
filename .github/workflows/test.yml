@@ -28,7 +28,7 @@ jobs:
         go run main.go -input test-output.json -output test-report.md
 
     - name: Upload Test Report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: test-report
         path: test-report.md
