@@ -61,6 +61,24 @@ runs:
         comment-author: 'github-actions[bot]'
         body-includes: Test Report
 
+    - name: Check if previous tests failed
+      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.find-comment.outputs.comment-id != '' }}
+      id: check-previous-status
+      shell: bash
+      run: |
+        if echo "${{ steps.find-comment.outputs.comment-body }}" | grep -q "Status-FAILED"; then
+          echo "HAD_FAILED_TESTS=true" >> $GITHUB_ENV
+        else
+          echo "HAD_FAILED_TESTS=false" >> $GITHUB_ENV
+        fi
+        
+        # Check if current tests pass
+        if grep -q "Status-PASSED" "${{ inputs.output-file }}"; then
+          echo "NOW_PASSING=true" >> $GITHUB_ENV
+        else
+          echo "NOW_PASSING=false" >> $GITHUB_ENV
+        fi
+
     - name: Read Test Report
       if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
       id: test-report
@@ -78,6 +96,7 @@ runs:
         comment-id: ${{ steps.find-comment.outputs.comment-id }}
         body: |
           # Test Report
+          ${{ env.HAD_FAILED_TESTS == 'true' && env.NOW_PASSING == 'true' && '🎉 **Previously failed tests are now passing!** 🎉' || '' }}
 
           ${{ env.REPORT }}
         edit-mode: replace

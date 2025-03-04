@@ -419,3 +419,194 @@ func TestReportFormattingAndStructure(t *testing.T) {
 		t.Errorf("Expected 'Report generated at:' in footer not found")
 	}
 }
+
+func TestProcessTestEvents(t *testing.T) {
+	jsonInput := `
+{"Time":"2023-04-01T10:00:00Z","Action":"run","Test":"TestExample"}
+{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestExample","Output":"running test\n"}
+{"Time":"2023-04-01T10:00:02Z","Action":"pass","Test":"TestExample","Elapsed":1.5}
+`
+	reader := strings.NewReader(jsonInput)
+
+	reportData, err := processTestEvents(reader)
+	if err != nil {
+		t.Fatalf("processTestEvents returned error: %v", err)
+	}
+
+	if reportData.TotalTests != 1 {
+		t.Errorf("Expected 1 total test, got %d", reportData.TotalTests)
+	}
+
+	if reportData.PassedTests != 1 {
+		t.Errorf("Expected 1 passed test, got %d", reportData.PassedTests)
+	}
+
+	testResult, exists := reportData.Results["TestExample"]
+	if !exists {
+		t.Fatal("TestExample not found in results")
+	}
+
+	if testResult.Status != "PASS" {
+		t.Errorf("Expected status PASS, got %s", testResult.Status)
+	}
+
+	if testResult.Duration != 1.5 {
+		t.Errorf("Expected duration 1.5s, got %f", testResult.Duration)
+	}
+}
+
+func TestEdgeCasesInReportGeneration(t *testing.T) {
+	tests := []struct {
+		name       string
+		reportData *ReportData
+		checks     []func(t *testing.T, markdown string)
+	}{
+		{
+			name: "empty test results",
+			reportData: &ReportData{
+				TotalTests:      0,
+				PassedTests:     0,
+				FailedTests:     0,
+				SkippedTests:    0,
+				TotalDuration:   0,
+				SortedTestNames: []string{},
+				Results:         map[string]*TestResult{},
+			},
+			checks: []func(t *testing.T, markdown string){
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "**Total Tests:** 0") {
+						t.Errorf("Expected zero total tests not found in: %s", markdown)
+					}
+				},
+			},
+		},
+		{
+			name: "extremely long test names",
+			reportData: &ReportData{
+				TotalTests:    1,
+				PassedTests:   1,
+				FailedTests:   0,
+				SkippedTests:  0,
+				TotalDuration: 0.5,
+				SortedTestNames: []string{
+					"TestWithExtremelyLongNameThatMightAffectTableFormattingInMarkdownOutput",
+				},
+				Results: map[string]*TestResult{
+					"TestWithExtremelyLongNameThatMightAffectTableFormattingInMarkdownOutput": {
+						Name:      "TestWithExtremelyLongNameThatMightAffectTableFormattingInMarkdownOutput",
+						Package:   "pkg/long",
+						Status:    "PASS",
+						Duration:  0.5,
+						IsSubTest: false,
+					},
+				},
+			},
+			checks: []func(t *testing.T, markdown string){
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "TestWithExtremelyLongNameThatMightAffectTableFormattingInMarkdownOutput") {
+						t.Errorf("Expected long test name not found in: %s", markdown)
+					}
+				},
+			},
+		},
+		{
+			name: "extremely short and long durations",
+			reportData: &ReportData{
+				TotalTests:    2,
+				PassedTests:   2,
+				FailedTests:   0,
+				SkippedTests:  0,
+				TotalDuration: 10.5,
+				SortedTestNames: []string{
+					"TestVeryFast",
+					"TestVerySlow",
+				},
+				Results: map[string]*TestResult{
+					"TestVeryFast": {
+						Name:      "TestVeryFast",
+						Package:   "pkg/perf",
+						Status:    "PASS",
+						Duration:  0.001, // 1ms
+						IsSubTest: false,
+					},
+					"TestVerySlow": {
+						Name:      "TestVerySlow",
+						Package:   "pkg/perf",
+						Status:    "PASS",
+						Duration:  10.5, // 10.5s
+						IsSubTest: false,
+					},
+				},
+			},
+			checks: []func(t *testing.T, markdown string){
+				func(t *testing.T, markdown string) {
+					if !strings.Contains(markdown, "0.001s") {
+						t.Errorf("Expected short duration not found in: %s", markdown)
+					}
+					if !strings.Contains(markdown, "10.500s") {
+						t.Errorf("Expected long duration not found in: %s", markdown)
+					}
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			markdown := generateMarkdownReport(tc.reportData)
+			for _, check := range tc.checks {
+				check(t, markdown)
+			}
+		})
+	}
+}
+
+func TestNestedSubtestsHandling(t *testing.T) {
+	reportData := &ReportData{
+		TotalTests:    1,
+		PassedTests:   1,
+		FailedTests:   0,
+		SkippedTests:  0,
+		TotalDuration: 0.8,
+		SortedTestNames: []string{
+			"TestParent",
+		},
+		Results: map[string]*TestResult{
+			"TestParent": {
+				Name:      "TestParent",
+				Package:   "pkg/nested",
+				Status:    "PASS",
+				Duration:  0.8,
+				IsSubTest: false,
+				SubTests:  []string{"TestParent/Child", "TestParent/Child/GrandChild"},
+			},
+			"TestParent/Child": {
+				Name:       "TestParent/Child",
+				Package:    "pkg/nested",
+				Status:     "PASS",
+				Duration:   0.6,
+				ParentTest: "TestParent",
+				IsSubTest:  true,
+				SubTests:   []string{"TestParent/Child/GrandChild"},
+			},
+			"TestParent/Child/GrandChild": {
+				Name:       "TestParent/Child/GrandChild",
+				Package:    "pkg/nested",
+				Status:     "PASS",
+				Duration:   0.4,
+				ParentTest: "TestParent/Child",
+				IsSubTest:  true,
+			},
+		},
+	}
+
+	markdown := generateMarkdownReport(reportData)
+
+	if !strings.Contains(markdown, "TestParent/Child/GrandChild") {
+		t.Errorf("Expected deeply nested test name not found in: %s", markdown)
+	}
+
+	if !strings.Contains(markdown, "0.400s") {
+		t.Errorf("Expected grandchild duration not found in: %s", markdown)
+	}
+}
