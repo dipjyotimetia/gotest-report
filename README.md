@@ -186,6 +186,21 @@ gotest-report -input test-output.json -output test-report.md
         Output markdown file (default "test-report.md")
 ```
 
+### Docker Container
+
+You can use this actions as a Docker container:
+
+```sh
+# Pull the image
+docker pull ghcr.io/dipjyotimetia/gotest-report:latest
+
+# Option 1: Process JSON file (mount current directory to /data in container)
+docker run --rm -v $(pwd):/data ghcr.io/dipjyotimetia/gotest-report -input /data/test-output.json -output /data/test-report.md
+
+# Option 2: Pipe directly
+go test ./... -json | docker run --rm -i ghcr.io/dipjyotimetia/gotest-report > test-report.md
+```
+
 ## Output Format
 
 The generated Markdown report includes:
