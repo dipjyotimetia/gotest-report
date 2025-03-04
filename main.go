@@ -217,16 +217,19 @@ func generateMarkdownReport(data *ReportData) string {
 	var sb strings.Builder
 
 	// Generate header
-	sb.WriteString("# Test Summery Report\n\n")
+	sb.WriteString("# Test Summary Report\n\n")
 
 	// Generate summary
 	passPercentage := 0.0
+	passPercentageDisplay := "N/A"
 	if data.TotalTests > 0 {
 		passPercentage = float64(data.PassedTests) / float64(data.TotalTests) * 100
+		passPercentageDisplay = fmt.Sprintf("%.1f%%", passPercentage)
 	}
+
 	sb.WriteString("## Summary\n\n")
 	sb.WriteString(fmt.Sprintf("- **Total Tests:** %d\n", data.TotalTests))
-	sb.WriteString(fmt.Sprintf("- **Passed:** %d (%.1f%%)\n", data.PassedTests, passPercentage))
+	sb.WriteString(fmt.Sprintf("- **Passed:** %d (%s)\n", data.PassedTests, passPercentageDisplay))
 	sb.WriteString(fmt.Sprintf("- **Failed:** %d\n", data.FailedTests))
 	sb.WriteString(fmt.Sprintf("- **Skipped:** %d\n", data.SkippedTests))
 	sb.WriteString(fmt.Sprintf("- **Total Duration:** %.2fs\n\n", data.TotalDuration))
@@ -332,7 +335,7 @@ func generateMarkdownReport(data *ReportData) string {
 
 				// Output for the main test
 				if result.Status == "FAIL" && len(result.Output) > 0 {
-					sb.WriteString("```\n")
+					sb.WriteString("```go\n")
 					for _, line := range result.Output {
 						if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 							strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
@@ -350,7 +353,7 @@ func generateMarkdownReport(data *ReportData) string {
 						sb.WriteString(fmt.Sprintf("#### %s\n\n", subTestDisplayName))
 
 						if len(subTest.Output) > 0 {
-							sb.WriteString("```\n")
+							sb.WriteString("```go\n")
 							for _, line := range subTest.Output {
 								if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 									strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
