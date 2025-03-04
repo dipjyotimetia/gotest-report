@@ -218,7 +218,7 @@ func generateMarkdownReport(data *ReportData) string {
 	var sb strings.Builder
 
 	// Generate header
-	sb.WriteString("# Go Test Results\n\n")
+	sb.WriteString("# Test Results\n\n")
 
 	// Generate summary
 	passPercentage := 0.0
@@ -303,8 +303,11 @@ func generateMarkdownReport(data *ReportData) string {
 	sb.WriteString("\n")
 
 	// If there are failures, show details
+	// If there are failures, show details
 	if data.FailedTests > 0 {
 		sb.WriteString("## Failed Tests Details\n\n")
+		sb.WriteString("<details>\n")
+		sb.WriteString("<summary>Click to expand failed test details</summary>\n\n")
 
 		for _, testName := range data.SortedTestNames {
 			result := data.Results[testName]
@@ -361,10 +364,15 @@ func generateMarkdownReport(data *ReportData) string {
 				}
 			}
 		}
+
+		// Close the details tag
+		sb.WriteString("</details>\n\n")
 	}
 
 	// Add duration metrics
 	sb.WriteString("## Test Durations\n\n")
+	sb.WriteString("<details>\n")
+	sb.WriteString("<summary>Click to expand test durations</summary>\n\n")
 	sb.WriteString("| Test | Duration |\n")
 	sb.WriteString("| ---- | -------- |\n")
 
@@ -388,10 +396,17 @@ func generateMarkdownReport(data *ReportData) string {
 		return durations[i].duration > durations[j].duration
 	})
 
-	// Take top 10 longest tests
+	// Scale factor for bar chart - handle outliers better
+	maxDuration := durations[0].duration
+	if len(durations) > 1 && maxDuration > durations[1].duration*3 {
+		// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
+		maxDuration = durations[1].duration * 1.5
+	}
+
+	// Take top 15 longest tests (increased from 10)
 	count := 0
 	for _, d := range durations {
-		if count >= 10 {
+		if count >= 15 {
 			break
 		}
 
@@ -408,7 +423,8 @@ func generateMarkdownReport(data *ReportData) string {
 
 		// Add bar chart using unicode block characters
 		durationBar := ""
-		barLength := int(d.duration * 20 / durations[0].duration) // Scale to fit
+		scaleFactor := 25.0                                      // Increased for better visualization
+		barLength := int(d.duration * scaleFactor / maxDuration) // Scale to fit
 		if barLength < 1 {
 			barLength = 1
 		}
@@ -420,8 +436,8 @@ func generateMarkdownReport(data *ReportData) string {
 		count++
 	}
 
-	// Add footer with timestamp
-	sb.WriteString("\n\n---\n\n")
+	// Close the details tag
+	sb.WriteString("\n</details>\n")
 	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().Format(time.RFC3339)))
 
 	return sb.String()
