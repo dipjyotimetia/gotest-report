@@ -161,6 +161,21 @@ This will create:
 2. A summary comment combining results from all jobs
 3. Links to the workflow run in all comments
 
+## Installation
+
+### From Binaries (Recommended)
+
+Download the pre-compiled binaries from the [releases page](https://github.com/dipjyotimetia/gotest-report/releases) and copy them to the desired location.
+
+```bash
+# Linux/macOS
+curl -L https://github.com/dipjyotimetia/gotest-report/releases/latest/download/gotest-report_<version>_<os>_<arch>.tar.gz | tar xz
+sudo mv gotest-report /usr/local/bin/
+
+# Windows
+# Download the .zip file from the releases page and extract it
+```
+
 ### Command Line
 
 You can also use this tool directly as a CLI application:
