@@ -37,7 +37,8 @@ runs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22'
+        go-version: '1.23'
+        cache: false
 
     - name: Generate test report
       shell: bash
@@ -126,7 +127,7 @@ runs:
       with:
         issue-number: ${{ github.event.pull_request.number }}
         comment-author: 'github-actions[bot]'
-        body-includes: "Test Report Summary"
+        body-includes: "Test Summary Report"
 
     - name: Check if previous tests failed
       if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.find-comment.outputs.comment-id != '' }}
@@ -175,7 +176,6 @@ runs:
         issue-number: ${{ github.event.pull_request.number }}
         comment-id: ${{ steps.find-comment.outputs.comment-id }}
         body: |
-          # Test Report Summary
           ${{ env.HAD_FAILED_TESTS == 'true' && env.NOW_PASSING == 'true' && '🎉 **Previously failed tests are now passing!** 🎉' || '' }}
 
           ${{ env.REPORT }}
