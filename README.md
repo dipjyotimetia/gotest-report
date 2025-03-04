@@ -119,7 +119,8 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22'
+        go-version: '1.23'
+        cache: false
 
     - name: Run unit tests with JSON output
       run: |
@@ -141,7 +142,8 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22'
+        go-version: '1.23'
+        cache: false
 
     - name: Run integration tests with JSON output
       run: |
