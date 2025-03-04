@@ -35,7 +35,7 @@ Add to your workflow file:
   run: go test ./... -json > test-output.json || true
 
 - name: Generate Test Report
-  uses: dipjyotimetia/gotest-report@v1
+  uses: dipjyotimetia/gotest-report@main
   with:
     test-json-file: test-output.json
     output-file: test-report.md
@@ -142,7 +142,7 @@ jobs:
         go test ./... -tags=unit -json > test-output.json || true
 
     - name: Generate and Comment Unit Test Report
-      uses: dipjyotimetia/gotest-report@v1
+      uses: dipjyotimetia/gotest-report@main
       with:
         test-json-file: test-output.json
         job-name: "Unit Tests"
@@ -163,7 +163,7 @@ jobs:
         go test ./... -tags=integration -json > test-output.json || true
 
     - name: Generate and Comment Integration Test Report
-      uses: dipjyotimetia/gotest-report@v1
+      uses: dipjyotimetia/gotest-report@main
       with:
         test-json-file: test-output.json
         job-name: "Integration Tests"
