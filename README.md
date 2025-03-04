@@ -232,7 +232,7 @@ The generated Markdown report includes:
 
 ### Summary Comment
 
-# Test Report Summary
+# Test Summery Report
 
 ## Summary
 
