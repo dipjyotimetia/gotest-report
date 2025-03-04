@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+var version = "dev"
+
 // TestEvent represents a single event from go test -json output
 type TestEvent struct {
 	Time    time.Time // Time when the event occurred
@@ -49,6 +51,13 @@ type ReportData struct {
 func main() {
 	inputFile := flag.String("input", "", "go test -json output file (default is stdin)")
 	outputFile := flag.String("output", "test-report.md", "Output markdown file")
+	showVersion := flag.Bool("version", false, "Show version information")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("gotest-report version %s\n", version)
+		os.Exit(0)
+	}
 	flag.Parse()
 
 	var reader io.Reader = os.Stdin
