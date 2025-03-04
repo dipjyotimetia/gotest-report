@@ -15,10 +15,15 @@ A command-line tool and GitHub Action that generates beautiful Markdown reports 
 - Detailed test results:
   - Hierarchical display of tests and subtests
   - Test durations with visual bar charts for the longest tests
-  - Detailed failure information for debugging
+  - Collapsible sections for failed test details and duration metrics
+- Multi-job support:
+  - Combine reports from multiple jobs in a single PR
+  - Individual job comments with detailed reports
+  - Consolidated summary comment with links to all job details
 - CI/CD integration:
   - GitHub Actions workflow included
   - Can be used as a GitHub Action or standalone CLI tool
+  - Direct links to workflow runs from reports
 
 ## Sequence Diagram
 ```mermaid
@@ -31,32 +36,33 @@ sequenceDiagram
     participant PR as Pull Request
     
     D->>GH: Create/Update PR
-    GH->>GA: Trigger Workflow
+    GH->>GA: Trigger Workflow with Multiple Jobs
     
-    GA->>GT: Run Go Tests with JSON output
-    GT->>GA: Return test.json output
+    par Job 1
+        GA->>GT: Run Go Tests with JSON output
+        GT->>GA: Return test.json output
+        GA->>TR: Process test.json
+        Note over TR: Parse JSON events
+        Note over TR: Generate Job 1 Report
+        TR->>GA: Return Job 1 Report
+    and Job 2
+        GA->>GT: Run Go Tests with JSON output
+        GT->>GA: Return test.json output
+        GA->>TR: Process test.json
+        Note over TR: Parse JSON events
+        Note over TR: Generate Job 2 Report
+        TR->>GA: Return Job 2 Report
+    end
     
-    GA->>TR: Process test.json
-    Note over TR: Parse JSON events
-    Note over TR: Aggregate test results
-    Note over TR: Calculate statistics
-    Note over TR: Generate Markdown report
-    
-    TR->>GA: Return Markdown report
-    GA->>GH: Upload report as artifact
+    GA->>GH: Upload reports as artifacts
     
     alt Comment PR is enabled
-        GA->>PR: Find existing comment or create new
-        GA->>PR: Comment PR with test report
+        GA->>PR: Add/update individual job comments
+        GA->>PR: Add/update summary comment with links
     end
     
-    alt Fail on Test Failure is enabled
-        GA->>GA: Check if any tests failed
-        GA->>GA: Fail workflow if tests failed
-    end
-    
-    D->>PR: View test report and comments
-    D->>GH: Download report artifact
+    D->>PR: View summary and job-specific reports
+    D->>GH: Access workflow run via embedded links
 ```
 
 ## Usage
@@ -86,8 +92,12 @@ Add the following to your workflow file:
 | output-file | Path for the generated Markdown report | No | test-report.md |
 | comment-pr | Whether to comment the PR with the test report | No | true |
 | fail-on-test-failure | Whether to fail the GitHub Action if any tests fail | No | false |
+| job-name | Name of the job running the tests (for multi-job reports) | No | '' |
+| summary-only | Include only summary in the combined PR comment (for multi-job setups) | No | false |
 
-### Complete GitHub Workflow Example
+### Multi-Job Setup Example
+
+Here's how to use the action in a multi-job workflow:
 
 ```yml
 name: Go Tests
@@ -101,7 +111,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -111,16 +121,45 @@ jobs:
       with:
         go-version: '1.22'
 
-    - name: Run tests with JSON output
+    - name: Run unit tests with JSON output
       run: |
-        go test ./... -json > test-output.json || true
+        go test ./... -tags=unit -json > test-output.json || true
 
-    - name: Generate and Comment Test Report
+    - name: Generate and Comment Unit Test Report
       uses: dipjyotimetia/gotest-report@v1
       with:
         test-json-file: test-output.json
+        job-name: "Unit Tests"
+        summary-only: true
+        comment-pr: true
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Run integration tests with JSON output
+      run: |
+        go test ./... -tags=integration -json > test-output.json || true
+
+    - name: Generate and Comment Integration Test Report
+      uses: dipjyotimetia/gotest-report@v1
+      with:
+        test-json-file: test-output.json
+        job-name: "Integration Tests"
+        summary-only: true
         comment-pr: true
 ```
+
+This will create:
+1. A detailed comment for each job (Unit Tests and Integration Tests)
+2. A summary comment combining results from all jobs
+3. Links to the workflow run in all comments
 
 ### Command Line
 
@@ -154,18 +193,48 @@ The generated Markdown report includes:
 1. **Summary Section** - Overall test statistics
 2. **Test Status** - Visual badge indicator of overall test status
 3. **Test Results** - Table of all tests with status and duration
-4. **Failed Tests Details** - Detailed output for failed tests (if any)
-5. **Test Durations** - Bar chart visualization of the longest-running tests
-6. **Timestamp** - When the report was generated
+4. **Failed Tests Details** - Collapsible section with detailed output for failed tests (if any)
+5. **Test Durations** - Collapsible section with bar chart visualization of the longest-running tests
+6. **Workflow Link** - Direct link to the GitHub Actions workflow run
+7. **Timestamp** - When the report was generated
 
-## Example Output
+## Example Output for Multi-Job Reports
 
-# Go Test Results
+### Summary Comment
+
+# Go Test Report Summary
 
 ## Summary
 
-- **Total Tests:** 3
-- **Passed:** 3 (100.0%)
+- **Total Tests:** 12
+- **Passed:** 12 (100.0%)
+- **Failed:** 0
+- **Skipped:** 0
+- **Total Duration:** 3.45s
+
+## Test Status
+
+![Status](https://img.shields.io/badge/Status-PASSED-brightgreen)
+
+<details>
+<summary>View details for all test jobs</summary>
+
+This is a combined report summary. See individual job comments for detailed reports or check the [workflow run](https://github.com/dipjyotimetia/gotest-report/actions/runs/123456789).
+</details>
+
+---
+
+[View Workflow Run](https://github.com/dipjyotimetia/gotest-report/actions/runs/123456789)
+
+
+### Individual Job Comment
+
+# Unit Tests Results
+
+## Summary
+
+- **Total Tests:** 5
+- **Passed:** 5 (100.0%)
 - **Failed:** 0
 - **Skipped:** 0
 - **Total Duration:** 1.23s
@@ -184,15 +253,9 @@ The generated Markdown report includes:
 |    ↳ SubTest2 | ✅ PASS | 0.200s |
 | **TestThree** | ✅ PASS | 0.334s |
 
-## Test Durations
-
-| Test | Duration |
-| ---- | -------- |
-| TestOne | 0.500s █████████████████████ |
-| TestTwo | 0.400s ████████████████ |
-| TestThree | 0.334s █████████████ |
-
 ---
+
+Job: **Unit Tests** | [View Workflow Run](https://github.com/dipjyotimetia/gotest-report/actions/runs/123456789)
 
 Report generated at: 2024-03-20T15:30:00Z
 

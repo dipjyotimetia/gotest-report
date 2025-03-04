@@ -22,6 +22,14 @@ inputs:
     description: 'Whether to fail the GitHub Action if any tests fail'
     required: false
     default: 'false'
+  job-name:
+    description: 'Name of the job running the tests (for multi-job reports)'
+    required: false
+    default: ''
+  summary-only:
+    description: 'Include only summary in the combined PR comment (for multi-job setups)'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -39,7 +47,7 @@ runs:
     - name: Upload Test Report
       uses: actions/upload-artifact@v4
       with:
-        name: test-report
+        name: test-report${{ inputs.job-name != '' && format('_{0}', inputs.job-name) || '' }}
         path: ${{ inputs.output-file }}
 
     - name: Check for test failures
@@ -52,6 +60,65 @@ runs:
           exit 1
         fi
 
+    - name: Add workflow run link to report
+      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+      shell: bash
+      run: |
+        # Create a temporary file
+        TEMP_FILE=$(mktemp)
+        
+        # Extract all content before the timestamp line
+        sed '/Report generated at/,$d' "${{ inputs.output-file }}" > "$TEMP_FILE"
+        
+        # Add workflow run link and timestamp
+        echo "" >> "$TEMP_FILE"
+        echo "---" >> "$TEMP_FILE"
+        
+        if [ -n "${{ inputs.job-name }}" ]; then
+          echo "Job: **${{ inputs.job-name }}** | " >> "$TEMP_FILE"
+        fi
+        
+        echo "[View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+        echo "Report generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$TEMP_FILE"
+        
+        # Replace original file with modified version
+        mv "$TEMP_FILE" "${{ inputs.output-file }}"
+      
+    - name: Prepare report for job
+      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+      id: prepare-report
+      shell: bash
+      run: |
+        # Process report based on settings
+        if [ "${{ inputs.summary-only }}" == "true" ]; then
+          # Extract only summary section
+          REPORT_CONTENT=$(awk '/^## Summary$/,/^##/ {if (!/^## [^S]/) print}' "${{ inputs.output-file }}")
+          
+          if [ -n "${{ inputs.job-name }}" ]; then
+            # Add job name header
+            REPORT_CONTENT="### ${{ inputs.job-name }} Test Results\n\n${REPORT_CONTENT}"
+          fi
+        else
+          # Use full report
+          REPORT_CONTENT=$(cat "${{ inputs.output-file }}")
+          
+          if [ -n "${{ inputs.job-name }}" ]; then
+            # Add job name header at the beginning
+            TEMP_FILE=$(mktemp)
+            echo "# ${{ inputs.job-name }} Test Results" > "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+            # Remove existing title and append the rest
+            tail -n +2 "${{ inputs.output-file }}" >> "$TEMP_FILE"
+            REPORT_CONTENT=$(cat "$TEMP_FILE")
+          fi
+        fi
+        
+        # Save for next step
+        echo "REPORT<<EOF" >> $GITHUB_ENV
+        echo "$REPORT_CONTENT" >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+
     - name: Find Comment
       if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
       uses: peter-evans/find-comment@v3
@@ -59,7 +126,7 @@ runs:
       with:
         issue-number: ${{ github.event.pull_request.number }}
         comment-author: 'github-actions[bot]'
-        body-includes: Test Report
+        body-includes: "Go Test Report Summary"
 
     - name: Check if previous tests failed
       if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.find-comment.outputs.comment-id != '' }}
@@ -79,24 +146,44 @@ runs:
           echo "NOW_PASSING=false" >> $GITHUB_ENV
         fi
 
-    - name: Read Test Report
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
-      id: test-report
-      shell: bash
-      run: |
-        echo "REPORT<<EOF" >> $GITHUB_ENV
-        cat "${{ inputs.output-file }}" >> $GITHUB_ENV
-        echo "EOF" >> $GITHUB_ENV
+    - name: Create or update job comment for multi-job setup
+      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && inputs.job-name != '' }}
+      uses: peter-evans/find-comment@v3
+      id: find-job-comment
+      with:
+        issue-number: ${{ github.event.pull_request.number }}
+        comment-author: 'github-actions[bot]'
+        body-includes: "${{ inputs.job-name }} Test Results"
 
-    - name: Comment PR with Test Report
+    - name: Save or update individual job report
+      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && inputs.job-name != '' }}
+      uses: peter-evans/create-or-update-comment@v4
+      with:
+        issue-number: ${{ github.event.pull_request.number }}
+        comment-id: ${{ steps.find-job-comment.outputs.comment-id }}
+        body: |
+          # ${{ inputs.job-name }} Test Results
+          ${{ env.HAD_FAILED_TESTS == 'true' && env.NOW_PASSING == 'true' && '🎉 **Previously failed tests are now passing!** 🎉' || '' }}
+
+          ${{ env.REPORT }}
+        edit-mode: replace
+
+    - name: Update main summary comment
       if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
       uses: peter-evans/create-or-update-comment@v4
       with:
         issue-number: ${{ github.event.pull_request.number }}
         comment-id: ${{ steps.find-comment.outputs.comment-id }}
         body: |
-          # Test Report
+          # Go Test Report Summary
           ${{ env.HAD_FAILED_TESTS == 'true' && env.NOW_PASSING == 'true' && '🎉 **Previously failed tests are now passing!** 🎉' || '' }}
 
           ${{ env.REPORT }}
+          
+          <details>
+          <summary>View details for all test jobs</summary>
+          
+          This is a combined report summary. See individual job comments for detailed reports or check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+          </details>
         edit-mode: replace
+        create-if-not-exists: true
