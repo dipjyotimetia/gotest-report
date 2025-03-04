@@ -388,7 +388,7 @@ func TestReportFormattingAndStructure(t *testing.T) {
 	markdown := generateMarkdownReport(reportData)
 
 	expectedSections := []string{
-		"# Test Summery Report",
+		"# Test Summary Report",
 		"## Summary",
 		"## Test Status",
 		"## Test Results",
