@@ -303,8 +303,11 @@ func generateMarkdownReport(data *ReportData) string {
 	sb.WriteString("\n")
 
 	// If there are failures, show details
+	// If there are failures, show details
 	if data.FailedTests > 0 {
 		sb.WriteString("## Failed Tests Details\n\n")
+		sb.WriteString("<details>\n")
+		sb.WriteString("<summary>Click to expand failed test details</summary>\n\n")
 
 		for _, testName := range data.SortedTestNames {
 			result := data.Results[testName]
@@ -361,6 +364,9 @@ func generateMarkdownReport(data *ReportData) string {
 				}
 			}
 		}
+
+		// Close the details tag
+		sb.WriteString("</details>\n\n")
 	}
 
 	// Add duration metrics
