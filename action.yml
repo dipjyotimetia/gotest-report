@@ -126,7 +126,7 @@ runs:
       with:
         issue-number: ${{ github.event.pull_request.number }}
         comment-author: 'github-actions[bot]'
-        body-includes: "Go Test Report Summary"
+        body-includes: "Test Report Summary"
 
     - name: Check if previous tests failed
       if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.find-comment.outputs.comment-id != '' }}
@@ -175,7 +175,7 @@ runs:
         issue-number: ${{ github.event.pull_request.number }}
         comment-id: ${{ steps.find-comment.outputs.comment-id }}
         body: |
-          # Go Test Report Summary
+          # Test Report Summary
           ${{ env.HAD_FAILED_TESTS == 'true' && env.NOW_PASSING == 'true' && '🎉 **Previously failed tests are now passing!** 🎉' || '' }}
 
           ${{ env.REPORT }}

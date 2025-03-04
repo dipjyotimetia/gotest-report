@@ -218,7 +218,7 @@ func generateMarkdownReport(data *ReportData) string {
 	var sb strings.Builder
 
 	// Generate header
-	sb.WriteString("# Go Test Results\n\n")
+	sb.WriteString("# Test Results\n\n")
 
 	// Generate summary
 	passPercentage := 0.0

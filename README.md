@@ -202,7 +202,7 @@ The generated Markdown report includes:
 
 ### Summary Comment
 
-# Go Test Report Summary
+# Test Report Summary
 
 ## Summary
 
