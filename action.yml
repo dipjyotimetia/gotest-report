@@ -30,6 +30,10 @@ inputs:
     description: 'Include only summary in the combined PR comment (for multi-job setups)'
     required: false
     default: 'false'
+  write-summary:
+    description: 'Whether to write the test report to GitHub Actions Summary'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -50,6 +54,13 @@ runs:
       with:
         name: test-report${{ inputs.job-name != '' && format('_{0}', inputs.job-name) || '' }}
         path: ${{ inputs.output-file }}
+
+    - name: Write to GitHub Actions Summary
+      if: ${{ inputs.write-summary == 'true' }}
+      shell: bash
+      run: |
+        # Write the test report to GitHub Actions Summary
+        cat "${{ inputs.output-file }}" >> $GITHUB_STEP_SUMMARY
 
     - name: Check for test failures
       if: ${{ inputs.fail-on-test-failure == 'true' }}

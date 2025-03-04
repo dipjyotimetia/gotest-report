@@ -2,30 +2,189 @@
 
 A command-line tool and GitHub Action that generates beautiful Markdown reports from Go test output in JSON format.
 
+![Status](https://img.shields.io/badge/Status-ACTIVE-brightgreen)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ## Features
 
-- Transforms Go test JSON output into readable Markdown reports
-- Provides summary statistics:
+- **Reporting**
+  - Beautiful Markdown reports from Go test JSON output
+  - Hierarchical display of tests and subtests
+  - Visual status indicators with badges and emojis (✅ PASS, ❌ FAIL, ⏭️ SKIP)
+  - Test durations with visual bar charts
+  - Collapsible sections for failed test details and metrics
+
+- **Statistics**
   - Total, passed, failed, and skipped test counts
   - Success rate percentage
   - Total test duration
-- Visual status indicators:
-  - Status badges (PASSED/FAILED/SKIPPED)
-  - Emoji indicators for test results (✅ PASS, ❌ FAIL, ⏭️ SKIP)
-- Detailed test results:
-  - Hierarchical display of tests and subtests
-  - Test durations with visual bar charts for the longest tests
-  - Collapsible sections for failed test details and duration metrics
-- Multi-job support:
-  - Combine reports from multiple jobs in a single PR
-  - Individual job comments with detailed reports
-  - Consolidated summary comment with links to all job details
-- CI/CD integration:
-  - GitHub Actions workflow included
-  - Can be used as a GitHub Action or standalone CLI tool
-  - Direct links to workflow runs from reports
 
-## Sequence Diagram
+- **GitHub Integration**
+  - Automated PR comments with test results
+  - Multi-job support with consolidated reporting
+  - Direct links to GitHub Actions workflow runs
+
+## Installation
+
+### Option 1: GitHub Action
+
+Add to your workflow file:
+
+```yml
+- name: Run Go tests with JSON output
+  run: go test ./... -json > test-output.json || true
+
+- name: Generate Test Report
+  uses: dipjyotimetia/gotest-report@v1
+  with:
+    test-json-file: test-output.json
+    output-file: test-report.md
+    comment-pr: true
+```
+
+### Option 2: Binary Installation
+
+Download pre-compiled binaries:
+
+```bash
+# Linux/macOS
+curl -L https://github.com/dipjyotimetia/gotest-report/releases/latest/download/gotest-report_<version>_<os>_<arch>.tar.gz | tar xz
+sudo mv gotest-report /usr/local/bin/
+
+# Windows
+# Download the .zip file from the releases page and extract it
+```
+
+### Option 3: Go Install
+
+```sh
+go install github.com/dipjyotimetia/gotest-report@latest
+```
+
+### Option 4: Docker Container
+
+```sh
+# Pull the image
+docker pull ghcr.io/dipjyotimetia/gotest-report:latest
+
+# Process JSON file
+docker run --rm -v $(pwd):/data ghcr.io/dipjyotimetia/gotest-report -input /data/test-output.json -output /data/test-report.md
+
+# Or pipe directly
+go test ./... -json | docker run --rm -i ghcr.io/dipjyotimetia/gotest-report > test-report.md
+```
+
+## Usage
+
+### Command Line
+
+```sh
+# Pipe directly
+go test ./... -json | gotest-report
+
+# Save JSON and process
+go test ./... -json > test-output.json
+gotest-report -input test-output.json -output test-report.md
+```
+
+### Command Line Options
+
+```
+  -input string
+        go test -json output file (default is stdin)
+  -output string
+        Output markdown file (default "test-report.md")
+  -version
+        Show version information
+```
+
+## GitHub Action Configuration
+
+### Action Inputs
+
+| Input | Description | Required | Default |
+| ----- | ----------- | -------- | ------- |
+| test-json-file | Path to the go test -json output file | No | test-output.json |
+| output-file | Path for the generated Markdown report | No | test-report.md |
+| comment-pr | Whether to comment the PR with the test report | No | true |
+| fail-on-test-failure | Whether to fail the GitHub Action if any tests fail | No | false |
+| job-name | Name of the job running the tests (for multi-job reports) | No | '' |
+| summary-only | Include only summary in the combined PR comment (for multi-job setups) | No | false |
+| write-summary | Whether to write the test report to GitHub Actions Summary | No | false |
+
+### Multi-Job Setup Example
+
+Here's how to use the action in a multi-job workflow:
+
+```yml
+name: Go Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+        cache: false
+
+    - name: Run unit tests with JSON output
+      run: |
+        go test ./... -tags=unit -json > test-output.json || true
+
+    - name: Generate and Comment Unit Test Report
+      uses: dipjyotimetia/gotest-report@v1
+      with:
+        test-json-file: test-output.json
+        job-name: "Unit Tests"
+        summary-only: true
+        comment-pr: true
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+        cache: false
+
+    - name: Run integration tests with JSON output
+      run: |
+        go test ./... -tags=integration -json > test-output.json || true
+
+    - name: Generate and Comment Integration Test Report
+      uses: dipjyotimetia/gotest-report@v1
+      with:
+        test-json-file: test-output.json
+        job-name: "Integration Tests"
+        summary-only: true
+        comment-pr: true
+```
+
+## Output Format
+
+The generated Markdown report includes:
+
+1. **Summary Section** - Overall test statistics
+2. **Test Status** - Visual badge indicator of overall test status
+3. **Test Results** - Table of all tests with status and duration
+4. **Failed Tests Details** - Collapsible section with detailed output for failed tests (if any)
+5. **Test Durations** - Collapsible section with bar chart visualization of the longest-running tests
+6. **Workflow Link** - Direct link to the GitHub Actions workflow run
+7. **Timestamp** - When the report was generated
+
+## How It Works
+
 ```mermaid
 sequenceDiagram
     participant D as Developer
@@ -65,176 +224,14 @@ sequenceDiagram
     D->>GH: Access workflow run via embedded links
 ```
 
-## Usage
-
-### As a GitHub Action
-
-Add the following to your workflow file:
-
-```yml
-- name: Run Go tests with JSON output
-  run: go test ./... -json > test-output.json || true
-
-- name: Generate Test Report
-  uses: dipjyotimetia/gotest-report@v1
-  with:
-    test-json-file: test-output.json
-    output-file: test-report.md
-    comment-pr: true
-    fail-on-test-failure: false
-```
-
-### Action Inputs
-
-| Input | Description | Required | Default |
-| ----- | ----------- | -------- | ------- |
-| test-json-file | Path to the go test -json output file | No | test-output.json |
-| output-file | Path for the generated Markdown report | No | test-report.md |
-| comment-pr | Whether to comment the PR with the test report | No | true |
-| fail-on-test-failure | Whether to fail the GitHub Action if any tests fail | No | false |
-| job-name | Name of the job running the tests (for multi-job reports) | No | '' |
-| summary-only | Include only summary in the combined PR comment (for multi-job setups) | No | false |
-
-### Multi-Job Setup Example
-
-Here's how to use the action in a multi-job workflow:
-
-```yml
-name: Go Tests
-
-on:
-  pull_request:
-    branches: [ main ]
-
-permissions:
-  pull-requests: write
-  contents: read
-
-jobs:
-  unit-tests:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
-        cache: false
-
-    - name: Run unit tests with JSON output
-      run: |
-        go test ./... -tags=unit -json > test-output.json || true
-
-    - name: Generate and Comment Unit Test Report
-      uses: dipjyotimetia/gotest-report@v1
-      with:
-        test-json-file: test-output.json
-        job-name: "Unit Tests"
-        summary-only: true
-        comment-pr: true
-
-  integration-tests:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
-        cache: false
-
-    - name: Run integration tests with JSON output
-      run: |
-        go test ./... -tags=integration -json > test-output.json || true
-
-    - name: Generate and Comment Integration Test Report
-      uses: dipjyotimetia/gotest-report@v1
-      with:
-        test-json-file: test-output.json
-        job-name: "Integration Tests"
-        summary-only: true
-        comment-pr: true
-```
-
-This will create:
-1. A detailed comment for each job (Unit Tests and Integration Tests)
-2. A summary comment combining results from all jobs
-3. Links to the workflow run in all comments
-
-## Installation
-
-### From Binaries (Recommended)
-
-Download the pre-compiled binaries from the [releases page](https://github.com/dipjyotimetia/gotest-report/releases) and copy them to the desired location.
-
-```bash
-# Linux/macOS
-curl -L https://github.com/dipjyotimetia/gotest-report/releases/latest/download/gotest-report_<version>_<os>_<arch>.tar.gz | tar xz
-sudo mv gotest-report /usr/local/bin/
-
-# Windows
-# Download the .zip file from the releases page and extract it
-```
-
-### Command Line
-
-You can also use this tool directly as a CLI application:
-
-```sh
-# Install
-go install github.com/dipjyotimetia/gotest-report@latest
-
-# Option 1: Pipe directly
-go test ./... -json | gotest-report
-
-# Option 2: Save JSON and process
-go test ./... -json > test-output.json
-gotest-report -input test-output.json -output test-report.md
-```
-
-### Command Line Options
-
-```
-  -input string
-        go test -json output file (default is stdin)
-  -output string
-        Output markdown file (default "test-report.md")
-```
-
-### Docker Container
-
-You can use this actions as a Docker container:
-
-```sh
-# Pull the image
-docker pull ghcr.io/dipjyotimetia/gotest-report:latest
-
-# Option 1: Process JSON file (mount current directory to /data in container)
-docker run --rm -v $(pwd):/data ghcr.io/dipjyotimetia/gotest-report -input /data/test-output.json -output /data/test-report.md
-
-# Option 2: Pipe directly
-go test ./... -json | docker run --rm -i ghcr.io/dipjyotimetia/gotest-report > test-report.md
-```
-
-## Output Format
-
-The generated Markdown report includes:
-
-1. **Summary Section** - Overall test statistics
-2. **Test Status** - Visual badge indicator of overall test status
-3. **Test Results** - Table of all tests with status and duration
-4. **Failed Tests Details** - Collapsible section with detailed output for failed tests (if any)
-5. **Test Durations** - Collapsible section with bar chart visualization of the longest-running tests
-6. **Workflow Link** - Direct link to the GitHub Actions workflow run
-7. **Timestamp** - When the report was generated
-
-## Example Output for Multi-Job Reports
+## Example Output
 
 ### Summary Comment
 
-# Test Summery Report
+<details>
+<summary>Click to expand Summary Comment example</summary>
+
+# Test Summary Report
 
 ## Summary
 
@@ -258,8 +255,12 @@ This is a combined report summary. See individual job comments for detailed repo
 
 [View Workflow Run](https://github.com/dipjyotimetia/gotest-report/actions/runs/123456789)
 
+</details>
 
 ### Individual Job Comment
+
+<details>
+<summary>Click to expand Individual Job Comment example</summary>
 
 # Unit Tests Results
 
@@ -290,6 +291,8 @@ This is a combined report summary. See individual job comments for detailed repo
 Job: **Unit Tests** | [View Workflow Run](https://github.com/dipjyotimetia/gotest-report/actions/runs/123456789)
 
 Report generated at: 2024-03-20T15:30:00Z
+
+</details>
 
 ## License
 
