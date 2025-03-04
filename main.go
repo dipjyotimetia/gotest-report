@@ -92,7 +92,6 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 	results := make(map[string]*TestResult)
 	testOutputMap := make(map[string][]string)
 
-	// Track the start time for each test to calculate duration
 	testStartTime := make(map[string]time.Time)
 
 	for scanner.Scan() {
@@ -108,7 +107,6 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 			continue
 		}
 
-		// Initialize test result if we haven't seen this test before
 		if _, exists := results[testFullName]; !exists && (event.Action == "run" || event.Action == "pass" || event.Action == "fail" || event.Action == "skip") {
 			results[testFullName] = &TestResult{
 				Name:      testFullName,
@@ -119,12 +117,10 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 				IsSubTest: strings.Contains(testFullName, "/"),
 			}
 
-			// If this is a subtest, add it to its parent's subtest list
 			if results[testFullName].IsSubTest {
 				parentName := testFullName[:strings.LastIndex(testFullName, "/")]
 				results[testFullName].ParentTest = parentName
 
-				// Ensure parent exists (may not if we missed the parent's "run" event)
 				if _, exists := results[parentName]; !exists {
 					results[parentName] = &TestResult{
 						Name:      parentName,
@@ -137,7 +133,6 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 					}
 				}
 
-				// Add this test to parent's subtest list
 				results[parentName].SubTests = append(results[parentName].SubTests, testFullName)
 			}
 		}
@@ -148,7 +143,6 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 
 		case "pass":
 			results[testFullName].Status = "PASS"
-			// Use provided elapsed time if available, otherwise calculate
 			if event.Elapsed > 0 {
 				results[testFullName].Duration = event.Elapsed
 			} else if !testStartTime[testFullName].IsZero() {
@@ -157,7 +151,6 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 
 		case "fail":
 			results[testFullName].Status = "FAIL"
-			// Use provided elapsed time if available, otherwise calculate
 			if event.Elapsed > 0 {
 				results[testFullName].Duration = event.Elapsed
 			} else if !testStartTime[testFullName].IsZero() {
@@ -191,12 +184,10 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 		}
 	}
 
-	// Calculate report summary data
 	reportData := &ReportData{
 		Results: results,
 	}
 
-	// Sort test names and calculate summary stats
 	var sortedNames []string
 	for name, result := range results {
 		// Only count root tests in summary (not subtests)
@@ -216,7 +207,6 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 		}
 	}
 
-	// Sort test names
 	sort.Strings(sortedNames)
 	reportData.SortedTestNames = sortedNames
 
@@ -227,7 +217,7 @@ func generateMarkdownReport(data *ReportData) string {
 	var sb strings.Builder
 
 	// Generate header
-	sb.WriteString("# Test Results\n\n")
+	sb.WriteString("# Test Summery Report\n\n")
 
 	// Generate summary
 	passPercentage := 0.0
@@ -432,12 +422,9 @@ func generateMarkdownReport(data *ReportData) string {
 
 		// Add bar chart using unicode block characters
 		durationBar := ""
-		scaleFactor := 25.0                                      // Increased for better visualization
-		barLength := int(d.duration * scaleFactor / maxDuration) // Scale to fit
-		if barLength < 1 {
-			barLength = 1
-		}
-		for i := 0; i < barLength; i++ {
+		scaleFactor := 25.0
+		barLength := max(int(d.duration*scaleFactor/maxDuration), 1)
+		for range barLength {
 			durationBar += "█"
 		}
 
@@ -447,7 +434,7 @@ func generateMarkdownReport(data *ReportData) string {
 
 	// Close the details tag
 	sb.WriteString("\n</details>\n")
-	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().Format(time.RFC3339)))
+	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().In(time.FixedZone("AEST", 10*60*60)).Format("02/01/06-15:04:05")))
 
 	return sb.String()
 }
