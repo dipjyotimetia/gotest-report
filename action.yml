@@ -186,4 +186,3 @@ runs:
           This is a combined report summary. See individual job comments for detailed reports or check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
           </details>
         edit-mode: replace
-        create-if-not-exists: true
