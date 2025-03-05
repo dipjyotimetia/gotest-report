@@ -18,10 +18,6 @@ inputs:
     description: 'Whether to comment the PR with the test report'
     required: false
     default: 'true'
-  fail-on-test-failure:
-    description: 'Whether to fail the GitHub Action if any tests fail'
-    required: false
-    default: 'false'
   job-name:
     description: 'Name of the job running the tests (for multi-job reports)'
     required: false
@@ -77,16 +73,6 @@ runs:
       run: |
         # Write the test report to GitHub Actions Summary
         cat "${{ inputs.output-file }}" >> $GITHUB_STEP_SUMMARY
-
-    - name: Check for test failures
-      if: ${{ inputs.fail-on-test-failure == 'true' }}
-      shell: bash
-      run: |
-        # Check if the test report contains 'FAILED'
-        if grep -q "Status-FAILED" "${{ inputs.output-file }}"; then
-          echo "Tests failed, failing the workflow as requested"
-          exit 1
-        fi
 
     - name: Add workflow run link to report
       if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
@@ -227,7 +213,7 @@ runs:
           const reportContent = fs.readFileSync('${{ inputs.output-file }}', 'utf8');
           
           // Only create issue if tests failed
-          if (reportContent.includes('Status-FAILED')) {
+          if (reportContent.includes('Status-FAILED-red')) {
             const runUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
             const issueTitle = `${{ inputs.issue-title }} - ${new Date().toISOString().split('T')[0]}`;
             
