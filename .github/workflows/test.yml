@@ -31,7 +31,7 @@ jobs:
         test-json-file: test-output.json
         output-file: test-report.md
         comment-pr: true
-        fail-on-test-failure: false
+        fail-on-test-failure: true
         create-issue-on-failure: true
         issue-title: "Test Failures in PR #${{ github.event.pull_request.number }}"
         issue-labels: "bug,test-failure,needs-investigation"
