@@ -221,15 +221,8 @@ runs:
             let issueBody = `## Test Failure Report\n\n`;
             issueBody += `Test failures detected in workflow run: [View Workflow Run](${runUrl})\n\n`;
             issueBody += `### Test Report\n\n`;
-            
-            // Extract and include only the relevant sections (summary + failed tests)
-            const summarySection = reportContent.match(/## Summary[\s\S]*?(?=##)/m);
 
             const failedTestsSection = reportContent.match(/## Test Results[\s\S]*?(?=##)/m);
-            
-            if (summarySection) {
-              issueBody += summarySection[0] + "\n";
-            }
             
             if (failedTestsSection) {
               issueBody += failedTestsSection[0] + "\n";
@@ -267,4 +260,5 @@ runs:
             await core.summary.addRaw(`## :warning: Test Failures Detected\n\nAn issue has been created: [#${data.number}: ${issueTitle}](${data.html_url})`).write();
           } else {
             console.log("No test failures detected, skipping issue creation");
-          }    
+          }
+    
