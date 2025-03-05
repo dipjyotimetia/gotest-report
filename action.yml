@@ -224,7 +224,8 @@ runs:
             
             // Extract and include only the relevant sections (summary + failed tests)
             const summarySection = reportContent.match(/## Summary[\s\S]*?(?=##)/m);
-            const failedTestsSection = reportContent.match(/## Failed Tests Details[\s\S]*?(?=##)/m);
+
+            const failedTestsSection = reportContent.match(/## Test Results[\s\S]*?(?=##)/m);
             
             if (summarySection) {
               issueBody += summarySection[0] + "\n";
