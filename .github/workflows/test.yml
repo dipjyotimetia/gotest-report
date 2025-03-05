@@ -5,9 +5,9 @@ on:
     branches: [ main ]
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  pull-requests: write
+  contents: read
+  issues: write
 
 jobs:
   test:
@@ -32,11 +32,8 @@ jobs:
         output-file: test-report.md
         comment-pr: true
         fail-on-test-failure: false
-
-    - name: Publish Test Results to Wiki
-      # if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      run: |
-        chmod +x ./publish_results_wiki.sh
-        ./publish_results_wiki.sh test-report.md "Latest-Test-Results"
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}    
+        create-issue-on-failure: true
+        issue-title: "Test Failures in PR #${{ github.event.pull_request.number }}"
+        issue-labels: "bug,test-failure,needs-investigation"
+        issue-assignees: "${{ github.event.pull_request.user.login }}"
+        
