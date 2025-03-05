@@ -214,8 +214,9 @@ runs:
           </details>
         edit-mode: replace
 
+   # Fix the issue creation step to make it independent of the fail-on-test-failure option
     - name: Create issue for test failures
-      if: ${{ inputs.create-issue-on-failure == 'true' && inputs.fail-on-test-failure == 'true' }}
+      if: ${{ inputs.create-issue-on-failure == 'true' }}
       uses: actions/github-script@v6
       with:
         github-token: ${{ github.token }}
@@ -249,6 +250,14 @@ runs:
               issueBody += "No detailed failure information available.\n";
             }
             
+            // Add reference to pull request if available
+            if ('${{ github.event_name }}' === 'pull_request') {
+              const prNumber = '${{ github.event.pull_request.number }}';
+              const prLink = `https://github.com/${{ github.repository }}/pull/${prNumber}`;
+              issueBody += `\n### Related Pull Request\n\n`;
+              issueBody += `This failure occurred in [PR #${prNumber}](${prLink})`;
+            }
+            
             issueBody += `\n\n_This issue was automatically created by the test workflow._`;
             
             // Parse labels and assignees
@@ -268,8 +277,7 @@ runs:
             console.log(`Created issue #${data.number}: ${data.html_url}`);
             
             // Add the issue link to the GitHub summary
-            const summary = `## :warning: Test Failures Detected\n\nAn issue has been created: [#${data.number}: ${issueTitle}](${data.html_url})`;
-            await core.summary.addRaw(summary).write();
+            await core.summary.addRaw(`## :warning: Test Failures Detected\n\nAn issue has been created: [#${data.number}: ${issueTitle}](${data.html_url})`).write();
           } else {
             console.log("No test failures detected, skipping issue creation");
           }    
