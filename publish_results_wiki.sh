@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to publish test results to GitHub Wiki
-# Usage: ./publish_results_to_wiki.sh <test-report-file> <wiki-page-name>
+# Usage: ./publish_results_wiki.sh <test-report-file> <wiki-page-name>
 
 set -e
 
@@ -22,6 +22,13 @@ if ! command -v git &> /dev/null; then
     exit 1
 fi
 
+# Check for GitHub token
+if [ -z "$GITHUB_TOKEN" ]; then
+    echo "Warning: GITHUB_TOKEN environment variable not set."
+    echo "You may encounter authentication issues when pushing to the wiki."
+    echo "Set it with: export GITHUB_TOKEN=your_personal_access_token"
+fi
+
 # Get repository information from git
 REPO_URL=$(git config --get remote.origin.url)
 if [ -z "$REPO_URL" ]; then
@@ -29,10 +36,36 @@ if [ -z "$REPO_URL" ]; then
     exit 1
 fi
 
-# Convert SSH URL to HTTPS for the wiki
-REPO_WIKI_URL=$(echo $REPO_URL | sed -E 's|git@github.com:|https://github.com/|' | sed -E 's|\.git$||')/wiki
+# Parse repository owner and name
+if [[ "$REPO_URL" == *"github.com"* ]]; then
+    # Handle SSH URL
+    if [[ "$REPO_URL" == git@* ]]; then
+        REPO_PATH=$(echo "$REPO_URL" | sed -E 's|git@github.com:||' | sed -E 's|\.git$||')
+    # Handle HTTPS URL
+    else
+        REPO_PATH=$(echo "$REPO_URL" | sed -E 's|https://github.com/||' | sed -E 's|\.git$||')
+    fi
+    
+    REPO_OWNER=$(echo "$REPO_PATH" | cut -d '/' -f 1)
+    REPO_NAME=$(echo "$REPO_PATH" | cut -d '/' -f 2)
+    
+    echo "Repository: $REPO_OWNER/$REPO_NAME"
+else
+    echo "Error: Not a GitHub repository URL: $REPO_URL"
+    exit 1
+fi
 
-echo "Repository Wiki URL: $REPO_WIKI_URL"
+# Construct the wiki URL with token for authentication
+if [ -n "$GITHUB_TOKEN" ]; then
+    REPO_WIKI_URL="https://${GITHUB_TOKEN}@github.com/${REPO_OWNER}/${REPO_NAME}.wiki.git"
+else
+    REPO_WIKI_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}.wiki.git"
+fi
+
+echo "Repository Wiki URL: https://github.com/${REPO_OWNER}/${REPO_NAME}/wiki"
+
+# Remove temp directory if it exists
+rm -rf $TEMP_DIR
 
 # Create temporary directory for wiki clone
 mkdir -p $TEMP_DIR
@@ -40,16 +73,14 @@ cd $TEMP_DIR
 
 # Clone the wiki repository
 echo "Cloning wiki repository..."
-git clone "$REPO_WIKI_URL" .
-
-# Check if clone was successful
-if [ $? -ne 0 ]; then
+git clone "$REPO_WIKI_URL" . 2>&1 || { 
     echo "Error: Failed to clone wiki repository."
-    echo "Make sure the wiki is enabled for your repository and you have proper permissions."
+    echo "Make sure the wiki is enabled and you have proper permissions."
+    echo "If using GitHub Actions, ensure GITHUB_TOKEN has wiki permissions."
     cd ..
     rm -rf $TEMP_DIR
     exit 1
-fi
+}
 
 # Prepare the wiki page content
 echo "Preparing wiki page content..."
@@ -60,7 +91,7 @@ HEADER="# Test Results (Updated: $CURRENT_TIME)\n\n"
 
 # Add the test report content
 cat ../$TEST_REPORT_FILE > "$WIKI_PAGE_NAME.md"
-sed -i "1s/^/$HEADER/" "$WIKI_PAGE_NAME.md"
+sed -i.bak "1s/^/$HEADER/" "$WIKI_PAGE_NAME.md" && rm -f "$WIKI_PAGE_NAME.md.bak"
 
 # Add a note about automatic updates
 echo -e "\n\n---\n\n_This page is automatically updated by CI/CD pipeline._" >> "$WIKI_PAGE_NAME.md"
@@ -71,7 +102,22 @@ git add "$WIKI_PAGE_NAME.md"
 git config user.email "github-actions@github.com"
 git config user.name "GitHub Actions"
 git commit -m "Update test results on $(date -u +"%Y-%m-%d")"
-git push
+
+# Push changes (with credential handling)
+echo "Pushing changes to wiki..."
+if [ -n "$GITHUB_TOKEN" ]; then
+    # Token is already in the URL
+    git push
+else
+    # No token provided, try normal push
+    git push || {
+        echo "Error: Failed to push changes to wiki."
+        echo "You may need to provide a GITHUB_TOKEN environment variable."
+        cd ..
+        rm -rf $TEMP_DIR
+        exit 1
+    }
+fi
 
 # Clean up
 cd ..
