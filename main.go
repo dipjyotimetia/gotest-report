@@ -280,31 +280,38 @@ func generateMarkdownReport(data *ReportData) string {
 		sb.WriteString(fmt.Sprintf("| **%s** | %s %s | %.3fs |\n",
 			displayName, statusEmoji, result.Status, result.Duration))
 
-		// Add subtests if any, with indentation
-		sort.Strings(result.SubTests)
-		for _, subTestName := range result.SubTests {
-			subTest := data.Results[subTestName]
+		// Add subtests if any, with collapsible section
+		if len(result.SubTests) > 0 {
+			// If test has subtests, add a collapsible section
+			sb.WriteString("| | <details><summary>Show subtests</summary> | |\n")
 
-			// Get subtest short name (part after the last slash)
-			subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
+			// Add subtests inside the collapsible section
+			sort.Strings(result.SubTests)
+			for _, subTestName := range result.SubTests {
+				subTest := data.Results[subTestName]
 
-			statusEmoji := "⏺️"
-			switch subTest.Status {
-			case "PASS":
-				statusEmoji = "✅"
-			case "FAIL":
-				statusEmoji = "❌"
-			case "SKIP":
-				statusEmoji = "⏭️"
+				// Get subtest short name (part after the last slash)
+				subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
+
+				statusEmoji := "⏺️"
+				switch subTest.Status {
+				case "PASS":
+					statusEmoji = "✅"
+				case "FAIL":
+					statusEmoji = "❌"
+				case "SKIP":
+					statusEmoji = "⏭️"
+				}
+
+				sb.WriteString(fmt.Sprintf("| &nbsp;&nbsp;&nbsp;&nbsp;↳ %s | %s %s | %.3fs |\n",
+					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration))
 			}
 
-			sb.WriteString(fmt.Sprintf("| &nbsp;&nbsp;&nbsp;&nbsp;↳ %s | %s %s | %.3fs |\n",
-				subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration))
+			sb.WriteString("| | </details> | |\n")
 		}
 	}
 	sb.WriteString("\n")
 
-	// If there are failures, show details
 	// If there are failures, show details
 	if data.FailedTests > 0 {
 		sb.WriteString("## Failed Tests Details\n\n")
