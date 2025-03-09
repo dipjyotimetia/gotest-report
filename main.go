@@ -445,7 +445,7 @@ func generateMarkdownReport(data *ReportData) string {
 
 	// Close the details tag
 	sb.WriteString("\n</details>\n")
-	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().In(time.FixedZone("AEST", 10*60*60)).Format("02/01/06-15:04:05")))
+	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().Format("02/01/06-15:04:05")))
 
 	return sb.String()
 }

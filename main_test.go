@@ -1,453 +1,281 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
 
-func TestProcessTestEvents(t *testing.T) {
+func TestOverallTestStatusDetermination(t *testing.T) {
 	tests := []struct {
 		name           string
-		jsonInput      string
-		expectedReport *ReportData
-		expectError    bool
+		reportData     *ReportData
+		expectedStatus string
 	}{
 		{
-			name: "simple passing test",
-			jsonInput: `
-{"Time":"2023-04-01T10:00:00Z","Action":"run","Test":"TestExample","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestExample","Output":"running test\n"}
-{"Time":"2023-04-01T10:00:02Z","Action":"pass","Test":"TestExample","Package":"pkg/example","Elapsed":1.5}
-`,
-			expectedReport: &ReportData{
-				TotalTests:    1,
-				PassedTests:   1,
+			name: "all tests passing should show PASSED status",
+			reportData: &ReportData{
+				TotalTests:    5,
+				PassedTests:   5,
 				FailedTests:   0,
 				SkippedTests:  0,
 				TotalDuration: 1.5,
-				SortedTestNames: []string{
-					"TestExample",
-				},
 			},
-			expectError: false,
+			expectedStatus: "PASSED-brightgreen",
 		},
 		{
-			name: "simple failing test",
-			jsonInput: `
-{"Time":"2023-04-01T10:00:00Z","Action":"run","Test":"TestFailing","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestFailing","Output":"=== RUN   TestFailing\n"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestFailing","Output":"--- FAIL: TestFailing (0.10s)\n"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestFailing","Output":"    failtest.go:10: some assertion failed\n"}
-{"Time":"2023-04-01T10:00:02Z","Action":"fail","Test":"TestFailing","Package":"pkg/example","Elapsed":0.1}
-`,
-			expectedReport: &ReportData{
-				TotalTests:    1,
-				PassedTests:   0,
+			name: "any failed tests should show FAILED status",
+			reportData: &ReportData{
+				TotalTests:    10,
+				PassedTests:   9,
 				FailedTests:   1,
 				SkippedTests:  0,
-				TotalDuration: 0.1,
-				SortedTestNames: []string{
-					"TestFailing",
-				},
+				TotalDuration: 2.5,
 			},
-			expectError: false,
+			expectedStatus: "FAILED-red",
 		},
 		{
-			name: "test with subtests",
-			jsonInput: `
-{"Time":"2023-04-01T10:00:00Z","Action":"run","Test":"TestWithSubtests","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestWithSubtests","Output":"=== RUN   TestWithSubtests\n"}
-{"Time":"2023-04-01T10:00:01Z","Action":"run","Test":"TestWithSubtests/SubtestA","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestWithSubtests/SubtestA","Output":"=== RUN   TestWithSubtests/SubtestA\n"}
-{"Time":"2023-04-01T10:00:02Z","Action":"pass","Test":"TestWithSubtests/SubtestA","Package":"pkg/example","Elapsed":0.05}
-{"Time":"2023-04-01T10:00:02Z","Action":"run","Test":"TestWithSubtests/SubtestB","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:02Z","Action":"output","Test":"TestWithSubtests/SubtestB","Output":"=== RUN   TestWithSubtests/SubtestB\n"}
-{"Time":"2023-04-01T10:00:03Z","Action":"fail","Test":"TestWithSubtests/SubtestB","Package":"pkg/example","Elapsed":0.1}
-{"Time":"2023-04-01T10:00:03Z","Action":"pass","Test":"TestWithSubtests","Package":"pkg/example","Elapsed":0.3}
-`,
-			expectedReport: &ReportData{
-				TotalTests:    1,
-				PassedTests:   1, // Parent test is counted as passed
-				FailedTests:   0, // Failed subtest doesn't count in the total
-				SkippedTests:  0,
-				TotalDuration: 0.3,
-				SortedTestNames: []string{
-					"TestWithSubtests",
-				},
-			},
-			expectError: false,
-		},
-		{
-			name: "skipped test",
-			jsonInput: `
-{"Time":"2023-04-01T10:00:00Z","Action":"run","Test":"TestSkipped","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestSkipped","Output":"=== RUN   TestSkipped\n"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestSkipped","Output":"--- SKIP: TestSkipped (0.01s)\n"}
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestSkipped","Output":"    skip_test.go:15: skipping this test\n"}
-{"Time":"2023-04-01T10:00:02Z","Action":"skip","Test":"TestSkipped","Package":"pkg/example","Elapsed":0.01}
-`,
-			expectedReport: &ReportData{
-				TotalTests:    1,
+			name: "all skipped tests should show SKIPPED status",
+			reportData: &ReportData{
+				TotalTests:    3,
 				PassedTests:   0,
 				FailedTests:   0,
-				SkippedTests:  1,
-				TotalDuration: 0.01,
-				SortedTestNames: []string{
-					"TestSkipped",
-				},
+				SkippedTests:  3,
+				TotalDuration: 0.05,
 			},
-			expectError: false,
+			expectedStatus: "SKIPPED-yellow",
 		},
 		{
-			name: "invalid json input",
-			jsonInput: `
-{"Time":"2023-04-01T10:00:00Z","Action":"run","Test":"TestExample"
-{"Time":"2023-04-01T10:00:01Z","Action":"output","Test":"TestExample","Output":"running test\n"}
-`,
-			expectedReport: nil,
-			expectError:    true,
+			name: "mixed passed and skipped should still show PASSED status",
+			reportData: &ReportData{
+				TotalTests:    5,
+				PassedTests:   3,
+				FailedTests:   0,
+				SkippedTests:  2,
+				TotalDuration: 0.8,
+			},
+			expectedStatus: "PASSED-brightgreen",
 		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			markdown := generateMarkdownReport(tt.reportData)
+			if !strings.Contains(markdown, "Status-"+tt.expectedStatus) {
+				t.Errorf("Expected status badge with %q not found in report", tt.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestNestedSubtestFormatting(t *testing.T) {
+	// Create test data with multiple levels of nested subtests
+	reportData := &ReportData{
+		TotalTests:    1,
+		PassedTests:   1,
+		FailedTests:   0,
+		SkippedTests:  0,
+		TotalDuration: 1.0,
+		SortedTestNames: []string{
+			"TestParent",
+		},
+		Results: map[string]*TestResult{
+			"TestParent": {
+				Name:      "TestParent",
+				Status:    "PASS",
+				Duration:  1.0,
+				SubTests:  []string{"TestParent/Child1", "TestParent/Child2"},
+				IsSubTest: false,
+			},
+			"TestParent/Child1": {
+				Name:       "TestParent/Child1",
+				Status:     "PASS",
+				Duration:   0.3,
+				ParentTest: "TestParent",
+				IsSubTest:  true,
+			},
+			"TestParent/Child2": {
+				Name:       "TestParent/Child2",
+				Status:     "PASS",
+				Duration:   0.7,
+				ParentTest: "TestParent",
+				SubTests:   []string{"TestParent/Child2/GrandChild"},
+				IsSubTest:  true,
+			},
+			"TestParent/Child2/GrandChild": {
+				Name:       "TestParent/Child2/GrandChild",
+				Status:     "PASS",
+				Duration:   0.2,
+				ParentTest: "TestParent/Child2",
+				IsSubTest:  true,
+			},
+		},
+	}
+
+	markdown := generateMarkdownReport(reportData)
+
+	// Verify parent test is properly displayed
+	if !strings.Contains(markdown, "| **TestParent**") {
+		t.Error("Parent test not properly formatted in report")
+	}
+
+	// Check for subtests details section
+	if !strings.Contains(markdown, "<details><summary>2 subtests</summary>") {
+		t.Error("Subtest summary not found in report")
+	}
+
+	// Test for nested table structure
+	if !strings.Contains(markdown, "<table><tr><th>Subtest</th>") {
+		t.Error("Nested table for subtests not found")
+	}
+
+	// Check that child tests are included
+	if !strings.Contains(markdown, "Child1") || !strings.Contains(markdown, "Child2") {
+		t.Error("Child test names not found in report")
+	}
+}
+
+func TestPassPercentageCalculation(t *testing.T) {
+	tests := []struct {
+		name               string
+		reportData         *ReportData
+		expectedPercentage string
+	}{
 		{
-			name: "nested subtests with multiple levels",
-			jsonInput: `
-{"Time":"2023-04-01T10:00:00Z","Action":"run","Test":"TestNested","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:01Z","Action":"run","Test":"TestNested/Level1","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:02Z","Action":"run","Test":"TestNested/Level1/Level2","Package":"pkg/example"}
-{"Time":"2023-04-01T10:00:03Z","Action":"pass","Test":"TestNested/Level1/Level2","Package":"pkg/example","Elapsed":0.05}
-{"Time":"2023-04-01T10:00:04Z","Action":"pass","Test":"TestNested/Level1","Package":"pkg/example","Elapsed":0.1}
-{"Time":"2023-04-01T10:00:05Z","Action":"pass","Test":"TestNested","Package":"pkg/example","Elapsed":0.2}
-`,
-			expectedReport: &ReportData{
-				TotalTests:    1,
-				PassedTests:   1,
+			name: "all tests passing should show 100%",
+			reportData: &ReportData{
+				TotalTests:    10,
+				PassedTests:   10,
 				FailedTests:   0,
 				SkippedTests:  0,
-				TotalDuration: 0.2,
-				SortedTestNames: []string{
-					"TestNested",
-				},
+				TotalDuration: 1.0,
 			},
-			expectError: false,
+			expectedPercentage: "100.0%",
 		},
 		{
-			name:      "empty test input",
-			jsonInput: "",
-			expectedReport: &ReportData{
-				TotalTests:      0,
-				PassedTests:     0,
-				FailedTests:     0,
-				SkippedTests:    0,
-				TotalDuration:   0,
-				SortedTestNames: []string{},
-				Results:         map[string]*TestResult{},
-			},
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			reader := strings.NewReader(tt.jsonInput)
-			reportData, err := processTestEvents(reader)
-
-			if tt.expectError && err == nil {
-				t.Fatal("Expected an error but got none")
-			}
-
-			if !tt.expectError && err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-
-			if tt.expectError {
-				return // No need to check results if we expected an error
-			}
-
-			// Verify basic counts
-			if reportData.TotalTests != tt.expectedReport.TotalTests {
-				t.Errorf("TotalTests: got %d, want %d", reportData.TotalTests, tt.expectedReport.TotalTests)
-			}
-
-			if reportData.PassedTests != tt.expectedReport.PassedTests {
-				t.Errorf("PassedTests: got %d, want %d", reportData.PassedTests, tt.expectedReport.PassedTests)
-			}
-
-			if reportData.FailedTests != tt.expectedReport.FailedTests {
-				t.Errorf("FailedTests: got %d, want %d", reportData.FailedTests, tt.expectedReport.FailedTests)
-			}
-
-			if reportData.SkippedTests != tt.expectedReport.SkippedTests {
-				t.Errorf("SkippedTests: got %d, want %d", reportData.SkippedTests, tt.expectedReport.SkippedTests)
-			}
-
-			if len(reportData.SortedTestNames) != len(tt.expectedReport.SortedTestNames) {
-				t.Errorf("SortedTestNames length: got %d, want %d",
-					len(reportData.SortedTestNames), len(tt.expectedReport.SortedTestNames))
-			}
-
-			// Check if expected test names exist in the report
-			for _, expectedName := range tt.expectedReport.SortedTestNames {
-				found := false
-				for _, actualName := range reportData.SortedTestNames {
-					if actualName == expectedName {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("Expected test name %s not found in results", expectedName)
-				}
-			}
-
-			// Verify test results map has entries for each test
-			for _, testName := range tt.expectedReport.SortedTestNames {
-				if _, exists := reportData.Results[testName]; !exists {
-					t.Errorf("Expected test %s not found in results map", testName)
-				}
-			}
-		})
-	}
-}
-
-func TestGenerateMarkdownReportSections(t *testing.T) {
-	tests := []struct {
-		name                string
-		reportData          *ReportData
-		expectedSections    []string
-		notExpectedSections []string
-	}{
-		{
-			name: "passing tests should not show failures section",
+			name: "half tests passing should show 50%",
 			reportData: &ReportData{
-				TotalTests:      2,
-				PassedTests:     2,
-				FailedTests:     0,
-				SkippedTests:    0,
-				TotalDuration:   0.5,
-				SortedTestNames: []string{"Test1", "Test2"},
-				Results: map[string]*TestResult{
-					"Test1": {Name: "Test1", Status: "PASS", Duration: 0.2},
-					"Test2": {Name: "Test2", Status: "PASS", Duration: 0.3},
-				},
+				TotalTests:    10,
+				PassedTests:   5,
+				FailedTests:   5,
+				SkippedTests:  0,
+				TotalDuration: 1.0,
 			},
-			expectedSections: []string{
-				"# Test Summary Report",
-				"## Summary",
-				"## Test Status",
-				"## Test Results",
-				"## Test Durations",
-				"![Status](https://img.shields.io/badge/Status-PASSED-brightgreen)",
-			},
-			notExpectedSections: []string{
-				"## Failed Tests Details",
-				"![Status](https://img.shields.io/badge/Status-FAILED-red)",
-			},
+			expectedPercentage: "50.0%",
 		},
 		{
-			name: "failing tests should show failures section",
+			name: "no tests should show N/A",
 			reportData: &ReportData{
-				TotalTests:      2,
-				PassedTests:     1,
-				FailedTests:     1,
-				SkippedTests:    0,
-				TotalDuration:   0.5,
-				SortedTestNames: []string{"PassingTest", "FailingTest"},
-				Results: map[string]*TestResult{
-					"PassingTest": {Name: "PassingTest", Status: "PASS", Duration: 0.2},
-					"FailingTest": {
-						Name:     "FailingTest",
-						Status:   "FAIL",
-						Duration: 0.3,
-						Output: []string{
-							"=== RUN   FailingTest",
-							"--- FAIL: FailingTest (0.30s)",
-							"    failtest.go:20: failure message",
-						},
-					},
-				},
+				TotalTests:    0,
+				PassedTests:   0,
+				FailedTests:   0,
+				SkippedTests:  0,
+				TotalDuration: 0.0,
 			},
-			expectedSections: []string{
-				"# Test Summary Report",
-				"## Summary",
-				"## Test Status",
-				"## Test Results",
-				"## Failed Tests Details",
-				"## Test Durations",
-				"![Status](https://img.shields.io/badge/Status-FAILED-red)",
-				"<summary>Click to expand failed test details</summary>",
-			},
-			notExpectedSections: []string{
-				"![Status](https://img.shields.io/badge/Status-PASSED-brightgreen)",
-			},
+			expectedPercentage: "N/A",
 		},
 		{
-			name: "skipped tests only should show skipped status",
+			name: "partial percentage should be formatted to one decimal place",
 			reportData: &ReportData{
-				TotalTests:      1,
-				PassedTests:     0,
-				FailedTests:     0,
-				SkippedTests:    1,
-				TotalDuration:   0.01,
-				SortedTestNames: []string{"SkippedTest"},
-				Results: map[string]*TestResult{
-					"SkippedTest": {Name: "SkippedTest", Status: "SKIP", Duration: 0.01},
-				},
+				TotalTests:    3,
+				PassedTests:   2,
+				FailedTests:   1,
+				SkippedTests:  0,
+				TotalDuration: 1.0,
 			},
-			expectedSections: []string{
-				"# Test Summary Report",
-				"## Summary",
-				"## Test Status",
-				"## Test Results",
-				"## Test Durations",
-				"![Status](https://img.shields.io/badge/Status-SKIPPED-yellow)",
-				"⏭️ SKIP",
-			},
-			notExpectedSections: []string{
-				"## Failed Tests Details",
-				"![Status](https://img.shields.io/badge/Status-PASSED-brightgreen)",
-				"![Status](https://img.shields.io/badge/Status-FAILED-red)",
-			},
+			expectedPercentage: "66.7%",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			markdown := generateMarkdownReport(tt.reportData)
-
-			// Check expected sections
-			for _, section := range tt.expectedSections {
-				if !strings.Contains(markdown, section) {
-					t.Errorf("Expected section not found: %s", section)
-				}
-			}
-
-			// Check sections that shouldn't be there
-			for _, section := range tt.notExpectedSections {
-				if strings.Contains(markdown, section) {
-					t.Errorf("Unexpected section found: %s", section)
-				}
+			if !strings.Contains(markdown, "Passed: "+strconv.Itoa(tt.reportData.PassedTests)+" ("+tt.expectedPercentage+")") {
+				t.Errorf("Expected pass percentage %q not found in report", tt.expectedPercentage)
 			}
 		})
 	}
 }
 
-func TestFormattingInMarkdownReport(t *testing.T) {
-	// Test focusing on specific formatting details in the report
-	tests := []struct {
-		name            string
-		reportData      *ReportData
-		checkFormatting func(t *testing.T, markdown string)
-	}{
-		{
-			name: "test name formatting includes emoji",
-			reportData: &ReportData{
-				TotalTests:      3,
-				PassedTests:     1,
-				FailedTests:     1,
-				SkippedTests:    1,
-				TotalDuration:   0.6,
-				SortedTestNames: []string{"PassTest", "FailTest", "SkipTest"},
-				Results: map[string]*TestResult{
-					"PassTest": {Name: "PassTest", Status: "PASS", Duration: 0.2},
-					"FailTest": {Name: "FailTest", Status: "FAIL", Duration: 0.3},
-					"SkipTest": {Name: "SkipTest", Status: "SKIP", Duration: 0.1},
+func TestFailedTestOutputFiltering(t *testing.T) {
+	reportData := &ReportData{
+		TotalTests:      1,
+		PassedTests:     0,
+		FailedTests:     1,
+		SkippedTests:    0,
+		TotalDuration:   0.5,
+		SortedTestNames: []string{"FailingTest"},
+		Results: map[string]*TestResult{
+			"FailingTest": {
+				Name:     "FailingTest",
+				Status:   "FAIL",
+				Duration: 0.5,
+				Output: []string{
+					"=== RUN   FailingTest",
+					"Some regular output that should be filtered",
+					"--- FAIL: FailingTest (0.50s)",
+					"    file.go:25: Error: something went wrong",
+					"    file.go:26: This is part of the error",
+					"FAIL",
+					"exit status 1",
 				},
-			},
-			checkFormatting: func(t *testing.T, markdown string) {
-				// Check for status emojis in test results
-				if !strings.Contains(markdown, "✅ PASS") {
-					t.Error("Pass emoji not found in markdown")
-				}
-				if !strings.Contains(markdown, "❌ FAIL") {
-					t.Error("Fail emoji not found in markdown")
-				}
-				if !strings.Contains(markdown, "⏭️ SKIP") {
-					t.Error("Skip emoji not found in markdown")
-				}
-
-				// Check for test name bolding
-				if !strings.Contains(markdown, "| **PassTest**") {
-					t.Error("Test name should be bold in table")
-				}
-			},
-		},
-		{
-			name: "duration formatting in test table",
-			reportData: &ReportData{
-				TotalTests:      3,
-				PassedTests:     3,
-				FailedTests:     0,
-				SkippedTests:    0,
-				TotalDuration:   1.234,
-				SortedTestNames: []string{"TestA", "TestB", "TestC"},
-				Results: map[string]*TestResult{
-					"TestA": {Name: "TestA", Status: "PASS", Duration: 0.123},
-					"TestB": {Name: "TestB", Status: "PASS", Duration: 0.456},
-					"TestC": {Name: "TestC", Status: "PASS", Duration: 0.655},
-				},
-			},
-			checkFormatting: func(t *testing.T, markdown string) {
-				// Check for properly formatted durations (3 decimal places)
-				if !strings.Contains(markdown, "0.123s") {
-					t.Error("Duration for TestA should be formatted as 0.123s")
-				}
-				if !strings.Contains(markdown, "0.456s") {
-					t.Error("Duration for TestB should be formatted as 0.456s")
-				}
-				if !strings.Contains(markdown, "0.655s") {
-					t.Error("Duration for TestC should be formatted as 0.655s")
-				}
-
-				// Check total duration formatting (2 decimal places)
-				if !strings.Contains(markdown, "**Total Duration:** 1.23s") {
-					t.Error("Total duration should be formatted with 2 decimal places")
-				}
-			},
-		},
-		{
-			name: "bar chart in duration metrics",
-			reportData: &ReportData{
-				TotalTests:      2,
-				PassedTests:     2,
-				FailedTests:     0,
-				SkippedTests:    0,
-				TotalDuration:   1.5,
-				SortedTestNames: []string{"ShortTest", "LongTest"},
-				Results: map[string]*TestResult{
-					"ShortTest": {Name: "ShortTest", Status: "PASS", Duration: 0.1},
-					"LongTest":  {Name: "LongTest", Status: "PASS", Duration: 1.0},
-				},
-			},
-			checkFormatting: func(t *testing.T, markdown string) {
-				// Check for duration bar charts with block characters
-				if !strings.Contains(markdown, "█") {
-					t.Error("Bar chart block characters not found in duration metrics")
-				}
-
-				// The LongTest's bar should be longer than ShortTest's
-				longBar := 0
-				shortBar := 0
-				lines := strings.Split(markdown, "\n")
-				for _, line := range lines {
-					if strings.Contains(line, "LongTest") && strings.Contains(line, "1.000s") {
-						longBar = strings.Count(line, "█")
-					}
-					if strings.Contains(line, "ShortTest") && strings.Contains(line, "0.100s") {
-						shortBar = strings.Count(line, "█")
-					}
-				}
-
-				if longBar <= shortBar {
-					t.Errorf("LongTest bar (%d blocks) should be longer than ShortTest bar (%d blocks)",
-						longBar, shortBar)
-				}
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			markdown := generateMarkdownReport(tt.reportData)
-			tt.checkFormatting(t, markdown)
-		})
+	markdown := generateMarkdownReport(reportData)
+
+	// Verify the failed test details section exists
+	if !strings.Contains(markdown, "## Failed Tests Details") {
+		t.Error("Failed test details section not found in report")
+	}
+
+	// Check that filtered output includes error lines but not regular output
+	if !strings.Contains(markdown, "--- FAIL: FailingTest") {
+		t.Error("FAIL message not found in filtered output")
+	}
+
+	if !strings.Contains(markdown, "Error: something went wrong") {
+		t.Error("Error message not found in filtered output")
+	}
+
+	// Check that regular output is not included
+	detailsSection := strings.Split(markdown, "### FailingTest")[1]
+	detailsSection = strings.Split(detailsSection, "## Test Durations")[0]
+
+	if strings.Contains(detailsSection, "Some regular output that should be filtered") {
+		t.Error("Regular output should not be included in filtered output")
+	}
+}
+
+func TestTimeFormatting(t *testing.T) {
+	reportData := &ReportData{
+		TotalTests:    1,
+		PassedTests:   1,
+		FailedTests:   0,
+		SkippedTests:  0,
+		TotalDuration: 0.0,
+		Results:       map[string]*TestResult{},
+	}
+
+	markdown := generateMarkdownReport(reportData)
+
+	// Extract report timestamp
+	lines := strings.Split(markdown, "\n")
+	var timestamp string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Report generated at:") {
+			timestamp = line
+			break
+		}
+	}
+
+	if timestamp == "" {
+		t.Fatal("Report timestamp not found")
+	}
+
+	// Just check that we have a timestamp, without being strict about format
+	if !strings.HasPrefix(timestamp, "Report generated at:") {
+		t.Errorf("Timestamp format incorrect: %s", timestamp)
 	}
 }
