@@ -23,6 +23,7 @@ A command-line tool and GitHub Action that generates beautiful Markdown reports 
   - Automated PR comments with test results
   - Multi-job support with consolidated reporting
   - Direct links to GitHub Actions workflow runs
+  - Automatic issue creation for test failures
 
 ## Installation
 
@@ -107,10 +108,13 @@ gotest-report -input test-output.json -output test-report.md
 | test-json-file | Path to the go test -json output file | No | test-output.json |
 | output-file | Path for the generated Markdown report | No | test-report.md |
 | comment-pr | Whether to comment the PR with the test report | No | true |
-| fail-on-test-failure | Whether to fail the GitHub Action if any tests fail | No | false |
 | job-name | Name of the job running the tests (for multi-job reports) | No | '' |
 | summary-only | Include only summary in the combined PR comment (for multi-job setups) | No | false |
 | write-summary | Whether to write the test report to GitHub Actions Summary | No | false |
+| create-issue-on-failure | Whether to create a GitHub issue when tests fail | No | false |
+| issue-title | Title for the GitHub issue to be created on test failure | No | 'Test Failure Report' |
+| issue-labels | Comma-separated list of labels for the created issue | No | 'test-failure,bug' |
+| issue-assignees | Comma-separated list of users to assign to the created issue | No | '' |
 
 ### Multi-Job Setup Example
 
@@ -171,6 +175,29 @@ jobs:
         comment-pr: true
 ```
 
+### Automatic Issue Creation for Test Failures
+
+You can configure the action to automatically create GitHub issues when tests fail:
+
+```yml
+- name: Generate Test Report
+  uses: dipjyotimetia/gotest-report@main
+  with:
+    test-json-file: test-output.json
+    output-file: test-report.md
+    comment-pr: true
+    create-issue-on-failure: true
+    issue-title: "Test Failures in PR #${{ github.event.pull_request.number }}"
+    issue-labels: "bug,test-failure,needs-investigation"
+    issue-assignees: "${{ github.event.pull_request.user.login }}"
+```
+
+This will:
+1. Create an issue only when tests fail
+2. Include test failure details from the report
+3. Link to the relevant PR and workflow run
+4. Apply specified labels and assign to specified users
+
 ## Output Format
 
 The generated Markdown report includes:
@@ -193,6 +220,7 @@ sequenceDiagram
     participant GT as Go Test
     participant TR as Test Reporter
     participant PR as Pull Request
+    participant IS as GitHub Issues
     
     D->>GH: Create/Update PR
     GH->>GA: Trigger Workflow with Multiple Jobs
@@ -220,8 +248,14 @@ sequenceDiagram
         GA->>PR: Add/update summary comment with links
     end
     
+    alt Create Issue on Failure is enabled
+        GA->>IS: Create Issue with test failure details
+        GA->>IS: Add labels and assign users
+    end
+    
     D->>PR: View summary and job-specific reports
     D->>GH: Access workflow run via embedded links
+    D->>IS: View and resolve test failure issues
 ```
 
 ## Example Output
@@ -278,13 +312,11 @@ This is a combined report summary. See individual job comments for detailed repo
 
 ## Test Results
 
-| Test | Status | Duration |
-| ---- | ------ | -------- |
-| **TestOne** | ✅ PASS | 0.500s |
-| **TestTwo** | ✅ PASS | 0.400s |
-|    ↳ SubTest1 | ✅ PASS | 0.200s |
-|    ↳ SubTest2 | ✅ PASS | 0.200s |
-| **TestThree** | ✅ PASS | 0.334s |
+| Test | Status | Duration | Details |
+| ---- | ------ | -------- | ------- |
+| **TestOne** | ✅ PASS | 0.500s | - |
+| **TestTwo** | ✅ PASS | 0.400s | <details><summary>2 subtests</summary><table><tr><th>Subtest</th><th>Status</th><th>Duration</th></tr><tr><td>SubTest1</td><td>✅ PASS</td><td>0.200s</td></tr><tr><td>SubTest2</td><td>✅ PASS</td><td>0.200s</td></tr></table></details> |
+| **TestThree** | ✅ PASS | 0.334s | - |
 
 ---
 
@@ -292,6 +324,30 @@ Job: **Unit Tests** | [View Workflow Run](https://github.com/dipjyotimetia/gotes
 
 Report generated at: 2024-03-20T15:30:00Z
 
+</details>
+
+### Test Failure Issue
+
+<details>
+<summary>Click to expand Test Failure Issue example</summary>
+
+## Test Failure Report
+
+Test failures detected in workflow run: [View Workflow Run](https://github.com/dipjyotimetia/gotest-report/actions/runs/123456789)
+
+### Test Report
+
+| Test | Status | Duration | Details |
+| ---- | ------ | -------- | ------- |
+| **TestAuth** | ✅ PASS | 0.300s | - |
+| **TestLogin** | ❌ FAIL | 0.502s | - |
+| **TestValidation** | ✅ PASS | 0.125s | - |
+
+### Related Pull Request
+
+This failure occurred in [PR #42](https://github.com/dipjyotimetia/gotest-report/pull/42)
+
+_This issue was automatically created by the test workflow._
 </details>
 
 ## License
