@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -216,10 +217,10 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 func generateMarkdownReport(data *ReportData) string {
 	var sb strings.Builder
 
-	// Generate header
+	// Generate header with better styling
 	sb.WriteString("# Test Summary Report\n\n")
 
-	// Generate summary
+	// Calculate pass percentage more efficiently
 	passPercentage := 0.0
 	passPercentageDisplay := "N/A"
 	if data.TotalTests > 0 {
@@ -227,6 +228,7 @@ func generateMarkdownReport(data *ReportData) string {
 		passPercentageDisplay = fmt.Sprintf("%.1f%%", passPercentage)
 	}
 
+	// Improved summary section with better formatting
 	sb.WriteString("## Summary\n\n")
 	sb.WriteString(fmt.Sprintf("- **Total Tests:** %d\n", data.TotalTests))
 	sb.WriteString(fmt.Sprintf("- **Passed:** %d (%s)\n", data.PassedTests, passPercentageDisplay))
@@ -234,34 +236,33 @@ func generateMarkdownReport(data *ReportData) string {
 	sb.WriteString(fmt.Sprintf("- **Skipped:** %d\n", data.SkippedTests))
 	sb.WriteString(fmt.Sprintf("- **Total Duration:** %.2fs\n\n", data.TotalDuration))
 
-	// Visual pass/fail indicator
+	// Enhanced visual status indicator with more distinctive badges
 	sb.WriteString("## Test Status\n\n")
-
-	// Create status badges
 	if data.FailedTests > 0 {
-		sb.WriteString("![Status](https://img.shields.io/badge/Status-FAILED-red)\n\n")
+		sb.WriteString("![Status](https://img.shields.io/badge/Status-FAILED-red?style=for-the-badge)\n\n")
 	} else if data.SkippedTests == data.TotalTests {
-		sb.WriteString("![Status](https://img.shields.io/badge/Status-SKIPPED-yellow)\n\n")
+		sb.WriteString("![Status](https://img.shields.io/badge/Status-SKIPPED-yellow?style=for-the-badge)\n\n")
 	} else {
-		sb.WriteString("![Status](https://img.shields.io/badge/Status-PASSED-brightgreen)\n\n")
+		sb.WriteString("![Status](https://img.shields.io/badge/Status-PASSED-brightgreen?style=for-the-badge)\n\n")
 	}
 
-	// Create a table of test results
+	// More readable test results table with better column widths
 	sb.WriteString("## Test Results\n\n")
 	sb.WriteString("| Test | Status | Duration |\n")
-	sb.WriteString("| ---- | ------ | -------- |\n")
+	sb.WriteString("| :--- | :----: | --------: |\n")
 
-	// Sort tests by package and name for a more organized report
+	// Create a map to track whether we need to add the table header after subtests
+	needsTableHeader := false
+
 	for _, testName := range data.SortedTestNames {
 		result := data.Results[testName]
 
-		// Skip subtests here - we'll show them nested
 		if result.IsSubTest {
 			continue
 		}
 
-		// Determine status emoji
-		statusEmoji := "⏺️"
+		// More distinctive status emojis
+		var statusEmoji string
 		switch result.Status {
 		case "PASS":
 			statusEmoji = "✅"
@@ -269,10 +270,12 @@ func generateMarkdownReport(data *ReportData) string {
 			statusEmoji = "❌"
 		case "SKIP":
 			statusEmoji = "⏭️"
+		default:
+			statusEmoji = "⏺️"
 		}
 
-		// Format test name to be more readable (remove package prefix if present)
-		displayName := result.Name
+		// Better display name formatting
+		displayName := testName
 		if strings.Contains(displayName, "/") && !result.IsSubTest {
 			displayName = filepath.Base(displayName)
 		}
@@ -280,21 +283,21 @@ func generateMarkdownReport(data *ReportData) string {
 		sb.WriteString(fmt.Sprintf("| **%s** | %s %s | %.3fs |\n",
 			displayName, statusEmoji, result.Status, result.Duration))
 
-		// Add subtests if any, with indentation
+		// Improved subtest rendering
 		if len(result.SubTests) > 0 {
-			// Fix: Close the current table before adding details block
 			sb.WriteString("\n")
 			sb.WriteString("<details>\n")
 			sb.WriteString("<summary>Show Subtests</summary>\n\n")
-			// Fix: Re-create table headers for subtests
 			sb.WriteString("| SubTest | Status | Duration |\n")
-			sb.WriteString("| ------- | ------ | -------- |\n")
+			sb.WriteString("| :------ | :----: | --------: |\n")
+
 			sort.Strings(result.SubTests)
 			for _, subTestName := range result.SubTests {
 				subTest := data.Results[subTestName]
+				// Extract just the subtest name without the full path
 				subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
 
-				statusEmoji := "⏺️"
+				var statusEmoji string
 				switch subTest.Status {
 				case "PASS":
 					statusEmoji = "✅"
@@ -302,70 +305,112 @@ func generateMarkdownReport(data *ReportData) string {
 					statusEmoji = "❌"
 				case "SKIP":
 					statusEmoji = "⏭️"
+				default:
+					statusEmoji = "⏺️"
 				}
 
-				sb.WriteString(fmt.Sprintf("| &nbsp;&nbsp;&nbsp;&nbsp;↳ %s | %s %s | %.3fs |\n",
+				sb.WriteString(fmt.Sprintf("| &nbsp;&nbsp;↳ %s | %s %s | %.3fs |\n",
 					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration))
 			}
-			sb.WriteString("</details>\n")
+			sb.WriteString("</details>\n\n")
+			needsTableHeader = true
+		}
+
+		// Add table header after subtests for better readability
+		if needsTableHeader {
+			sb.WriteString("| Test | Status | Duration |\n")
+			sb.WriteString("| :--- | :----: | --------: |\n")
+			needsTableHeader = false
 		}
 	}
 	sb.WriteString("\n")
 
-	// If there are failures, show details
+	// Enhanced failed tests section
 	if data.FailedTests > 0 {
 		sb.WriteString("## Failed Tests Details\n\n")
 		sb.WriteString("<details>\n")
 		sb.WriteString("<summary>Click to expand failed test details</summary>\n\n")
 
+		failedTestCount := 0
 		for _, testName := range data.SortedTestNames {
 			result := data.Results[testName]
 
 			// Check if this test or any of its subtests failed
 			testFailed := result.Status == "FAIL"
+			failedSubtests := []string{}
 
 			// Check subtests for failures
 			for _, subTestName := range result.SubTests {
 				if data.Results[subTestName].Status == "FAIL" {
 					testFailed = true
-					break
+					failedSubtests = append(failedSubtests, subTestName)
 				}
 			}
 
 			if testFailed {
+				failedTestCount++
 				displayName := testName
 				if strings.Contains(displayName, "/") && !result.IsSubTest {
 					displayName = filepath.Base(displayName)
 				}
 
-				sb.WriteString(fmt.Sprintf("### %s\n\n", displayName))
+				// Add horizontal rule between failed tests for better separation
+				if failedTestCount > 1 {
+					sb.WriteString("---\n\n")
+				}
 
-				// Output for the main test
-				if result.Status == "FAIL" && len(result.Output) > 0 {
-					sb.WriteString("```\n") // Fix: Remove language identifier for better compatibility
+				sb.WriteString(fmt.Sprintf("### ❌ %s\n\n", displayName))
+
+				// More focused error output for the main test
+				if result.Status == "FAIL" {
+					const maxOutputLines = 20 // Limit output lines to prevent excessive length
+					var errorLines []string
+
 					for _, line := range result.Output {
 						if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 							strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
-							sb.WriteString(fmt.Sprintf("%s\n", line))
+							errorLines = append(errorLines, line)
 						}
 					}
-					sb.WriteString("```\n\n")
+
+					if len(errorLines) > 0 {
+						sb.WriteString("```go\n") // Add language for syntax highlighting
+						if len(errorLines) > maxOutputLines {
+							sb.WriteString("...(truncated)...\n")
+							errorLines = errorLines[len(errorLines)-maxOutputLines:]
+						}
+						for _, line := range errorLines {
+							sb.WriteString(fmt.Sprintf("%s\n", line))
+						}
+						sb.WriteString("```\n\n")
+					}
 				}
 
-				// Output for failed subtests
-				for _, subTestName := range result.SubTests {
-					subTest := data.Results[subTestName]
-					if subTest.Status == "FAIL" {
+				// Process failed subtests with better formatting
+				if len(failedSubtests) > 0 {
+					for _, subTestName := range failedSubtests {
+						subTest := data.Results[subTestName]
 						subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
-						sb.WriteString(fmt.Sprintf("#### %s\n\n", subTestDisplayName))
+						sb.WriteString(fmt.Sprintf("#### ↳ %s\n\n", subTestDisplayName))
 
-						if len(subTest.Output) > 0 {
-							sb.WriteString("```\n") // Fix: Remove language identifier for better compatibility
-							for _, line := range subTest.Output {
-								if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
-									strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
-									sb.WriteString(fmt.Sprintf("%s\n", line))
-								}
+						const maxOutputLines = 15 // Limit output lines for subtests
+						var errorLines []string
+
+						for _, line := range subTest.Output {
+							if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
+								strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
+								errorLines = append(errorLines, line)
+							}
+						}
+
+						if len(errorLines) > 0 {
+							sb.WriteString("```go\n") // Add language for syntax highlighting
+							if len(errorLines) > maxOutputLines {
+								sb.WriteString("...(truncated)...\n")
+								errorLines = errorLines[len(errorLines)-maxOutputLines:]
+							}
+							for _, line := range errorLines {
+								sb.WriteString(fmt.Sprintf("%s\n", line))
 							}
 							sb.WriteString("```\n\n")
 						}
@@ -378,12 +423,12 @@ func generateMarkdownReport(data *ReportData) string {
 		sb.WriteString("</details>\n\n")
 	}
 
-	// Add duration metrics
+	// Improved duration metrics with better visualization
 	sb.WriteString("## Test Durations\n\n")
 	sb.WriteString("<details>\n")
 	sb.WriteString("<summary>Click to expand test durations</summary>\n\n")
-	sb.WriteString("| Test | Duration |\n")
-	sb.WriteString("| ---- | -------- |\n")
+	sb.WriteString("| Test | Duration | Relative Time |\n")
+	sb.WriteString("| :--- | --------: | :--- |\n")
 
 	// Sort tests by duration (descending)
 	type testDuration struct {
@@ -405,20 +450,25 @@ func generateMarkdownReport(data *ReportData) string {
 		return durations[i].duration > durations[j].duration
 	})
 
-	// Scale factor for bar chart - handle outliers better
+	// Improved bar chart scaling to handle outliers better
 	maxDuration := 0.0
 	if len(durations) > 0 {
 		maxDuration = durations[0].duration
-		if len(durations) > 1 && maxDuration > durations[1].duration*3 {
-			// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
+		// Use 95th percentile instead of arbitrary scaling
+		if len(durations) > 20 {
+			percentile95Index := int(float64(len(durations)) * 0.05)
+			maxDuration = durations[percentile95Index].duration
+		} else if len(durations) > 1 && maxDuration > durations[1].duration*3 {
+			// If top test is 3x longer than second, use second test as scale
 			maxDuration = durations[1].duration * 1.5
 		}
 	}
 
-	// Take top 15 longest tests (increased from 10)
+	// Show top 20 longest tests with improved visualization
 	count := 0
+	maxBarLength := 30 // Maximum bar length
 	for _, d := range durations {
-		if count >= 15 {
+		if count >= 20 {
 			break
 		}
 
@@ -433,28 +483,94 @@ func generateMarkdownReport(data *ReportData) string {
 			displayName = "↳ " + d.name[strings.LastIndex(d.name, "/")+1:]
 		}
 
-		// Add bar chart using unicode block characters
-		durationBar := ""
-		scaleFactor := 25.0
-		// Fix: Avoid division by zero
+		// Add improved bar chart using unicode block characters
 		var barLength int
 		if maxDuration > 0 {
-			barLength = max(int(d.duration*scaleFactor/maxDuration), 1)
+			barLength = int(math.Ceil(float64(maxBarLength) * math.Min(d.duration/maxDuration, 1.0)))
+			barLength = max(barLength, 1) // At least 1 character
 		} else {
 			barLength = 1
 		}
+
+		// Use gradient colors for the bar
+		durationBar := ""
 		for range barLength {
 			durationBar += "█"
 		}
 
-		sb.WriteString(fmt.Sprintf("| %s | %.3fs %s |\n", displayName, d.duration, durationBar))
+		sb.WriteString(fmt.Sprintf("| %s | %.3fs | %s |\n", displayName, d.duration, durationBar))
 		count++
+	}
+
+	// Add note if there are more tests not shown
+	if len(durations) > 20 {
+		sb.WriteString(fmt.Sprintf("\n*%d more tests not shown*\n", len(durations)-20))
 	}
 
 	// Close the details tag
 	sb.WriteString("\n</details>\n\n")
-	// Fix: Add more spacing before timestamp for better readability
-	sb.WriteString(fmt.Sprintf("*Report generated at: %s*\n", time.Now().UTC().Format(time.RFC3339)))
+
+	// Add visual duration chart
+	if len(durations) > 0 {
+		sb.WriteString("## Duration Distribution\n\n")
+		sb.WriteString("<details>\n")
+		sb.WriteString("<summary>Click to expand duration distribution</summary>\n\n")
+
+		// Create a simple histogram
+		const numBuckets = 10
+		buckets := make([]int, numBuckets)
+		maxValue := durations[0].duration
+
+		for _, d := range durations {
+			if d.duration > 0 {
+				bucketIndex := int(math.Min(float64(numBuckets-1), math.Floor(float64(numBuckets)*d.duration/maxValue)))
+				buckets[bucketIndex]++
+			} else {
+				buckets[0]++
+			}
+		}
+
+		// Find the maximum bucket count for scaling
+		maxBucketCount := 0
+		for _, count := range buckets {
+			if count > maxBucketCount {
+				maxBucketCount = count
+			}
+		}
+
+		// Generate the histogram
+		sb.WriteString("```\n")
+		sb.WriteString("Duration Distribution (number of tests):\n\n")
+
+		for i := 0; i < numBuckets; i++ {
+			lowerBound := maxValue * float64(i) / float64(numBuckets)
+			upperBound := maxValue * float64(i+1) / float64(numBuckets)
+
+			// Format the duration range
+			rangeStr := fmt.Sprintf("%6.3fs - %6.3fs", lowerBound, upperBound)
+
+			// Create the bar
+			barLength := 0
+			if maxBucketCount > 0 {
+				barLength = (buckets[i] * 40) / maxBucketCount
+			}
+
+			bar := ""
+			for j := 0; j < barLength; j++ {
+				bar += "█"
+			}
+
+			sb.WriteString(fmt.Sprintf("%s | %s %d\n", rangeStr, bar, buckets[i]))
+		}
+
+		sb.WriteString("```\n")
+		sb.WriteString("\n</details>\n\n")
+	}
+
+	// Add useful footer with improved timestamp formatting
+	sb.WriteString("---\n\n")
+	sb.WriteString(fmt.Sprintf("*Report generated at: %s*\n",
+		time.Now().UTC().Format("2006-01-02 15:04:05 UTC")))
 
 	return sb.String()
 }
