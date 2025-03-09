@@ -282,13 +282,6 @@ func generateMarkdownReport(data *ReportData) string {
 
 		// Add subtests if any, with indentation
 		if len(result.SubTests) > 0 {
-			// Fix: Close the current table before adding details block
-			sb.WriteString("\n")
-			sb.WriteString("<details>\n")
-			sb.WriteString("<summary>Show Subtests</summary>\n\n")
-			// Fix: Re-create table headers for subtests
-			sb.WriteString("| SubTest | Status | Duration |\n")
-			sb.WriteString("| ------- | ------ | -------- |\n")
 			sort.Strings(result.SubTests)
 			for _, subTestName := range result.SubTests {
 				subTest := data.Results[subTestName]
@@ -304,13 +297,9 @@ func generateMarkdownReport(data *ReportData) string {
 					statusEmoji = "⏭️"
 				}
 
-				sb.WriteString(fmt.Sprintf("| &nbsp;&nbsp;&nbsp;&nbsp;↳ %s | %s %s | %.3fs |\n",
+				sb.WriteString(fmt.Sprintf("|    ↳ %s | %s %s | %.3fs |\n",
 					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration))
 			}
-			sb.WriteString("</details>\n")
-			// Fix: Restart the main table after details block
-			sb.WriteString("\n| Test | Status | Duration |\n")
-			sb.WriteString("| ---- | ------ | -------- |\n")
 		}
 	}
 	sb.WriteString("\n")
