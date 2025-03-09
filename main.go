@@ -280,20 +280,15 @@ func generateMarkdownReport(data *ReportData) string {
 		sb.WriteString(fmt.Sprintf("| **%s** | %s %s | %.3fs |\n",
 			displayName, statusEmoji, result.Status, result.Duration))
 
-		sb.WriteString("\n")
-
-		// Add subtests if any, with collapsible section
+		// Add subtests if any, with indentation
 		if len(result.SubTests) > 0 {
-			// If test has subtests, add a collapsible section
-			sb.WriteString("| | <details><summary>Show subtests</summary> | |\n")
+			sb.WriteString("<details>\n")
+			sb.WriteString("<summary>Show Subtests</summary>\n\n")
 			sb.WriteString("| SubTest | Status | Duration |\n")
 			sb.WriteString("| ------- | ------ | -------- |\n")
-			// Add subtests inside the collapsible section
 			sort.Strings(result.SubTests)
 			for _, subTestName := range result.SubTests {
 				subTest := data.Results[subTestName]
-
-				// Get subtest short name (part after the last slash)
 				subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
 
 				statusEmoji := "⏺️"
@@ -309,8 +304,7 @@ func generateMarkdownReport(data *ReportData) string {
 				sb.WriteString(fmt.Sprintf("| &nbsp;&nbsp;&nbsp;&nbsp;↳ %s | %s %s | %.3fs |\n",
 					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration))
 			}
-
-			sb.WriteString("\n</details>\n")
+			sb.WriteString("</details>\n")
 		}
 	}
 	sb.WriteString("\n")
