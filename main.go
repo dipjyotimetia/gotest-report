@@ -282,8 +282,11 @@ func generateMarkdownReport(data *ReportData) string {
 
 		// Add subtests if any, with indentation
 		if len(result.SubTests) > 0 {
+			// Fix: Close the current table before adding details block
+			sb.WriteString("\n")
 			sb.WriteString("<details>\n")
 			sb.WriteString("<summary>Show Subtests</summary>\n\n")
+			// Fix: Re-create table headers for subtests
 			sb.WriteString("| SubTest | Status | Duration |\n")
 			sb.WriteString("| ------- | ------ | -------- |\n")
 			sort.Strings(result.SubTests)
@@ -305,6 +308,9 @@ func generateMarkdownReport(data *ReportData) string {
 					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration))
 			}
 			sb.WriteString("</details>\n")
+			// Fix: Restart the main table after details block
+			sb.WriteString("\n| Test | Status | Duration |\n")
+			sb.WriteString("| ---- | ------ | -------- |\n")
 		}
 	}
 	sb.WriteString("\n")
@@ -339,7 +345,7 @@ func generateMarkdownReport(data *ReportData) string {
 
 				// Output for the main test
 				if result.Status == "FAIL" && len(result.Output) > 0 {
-					sb.WriteString("```go\n")
+					sb.WriteString("```\n") // Fix: Remove language identifier for better compatibility
 					for _, line := range result.Output {
 						if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 							strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
@@ -357,7 +363,7 @@ func generateMarkdownReport(data *ReportData) string {
 						sb.WriteString(fmt.Sprintf("#### %s\n\n", subTestDisplayName))
 
 						if len(subTest.Output) > 0 {
-							sb.WriteString("```go\n")
+							sb.WriteString("```\n") // Fix: Remove language identifier for better compatibility
 							for _, line := range subTest.Output {
 								if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 									strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
@@ -403,10 +409,13 @@ func generateMarkdownReport(data *ReportData) string {
 	})
 
 	// Scale factor for bar chart - handle outliers better
-	maxDuration := durations[0].duration
-	if len(durations) > 1 && maxDuration > durations[1].duration*3 {
-		// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
-		maxDuration = durations[1].duration * 1.5
+	maxDuration := 0.0
+	if len(durations) > 0 {
+		maxDuration = durations[0].duration
+		if len(durations) > 1 && maxDuration > durations[1].duration*3 {
+			// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
+			maxDuration = durations[1].duration * 1.5
+		}
 	}
 
 	// Take top 15 longest tests (increased from 10)
@@ -430,8 +439,14 @@ func generateMarkdownReport(data *ReportData) string {
 		// Add bar chart using unicode block characters
 		durationBar := ""
 		scaleFactor := 25.0
-		barLength := max(int(d.duration*scaleFactor/maxDuration), 1)
-		for range barLength {
+		// Fix: Avoid division by zero
+		var barLength int
+		if maxDuration > 0 {
+			barLength = max(int(d.duration*scaleFactor/maxDuration), 1)
+		} else {
+			barLength = 1
+		}
+		for i := 0; i < barLength; i++ {
 			durationBar += "█"
 		}
 
@@ -440,8 +455,9 @@ func generateMarkdownReport(data *ReportData) string {
 	}
 
 	// Close the details tag
-	sb.WriteString("\n</details>\n")
-	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().In(time.FixedZone("AEST", 10*60*60)).Format("02/01/06-15:04:05")))
+	sb.WriteString("\n</details>\n\n")
+	// Fix: Add more spacing before timestamp for better readability
+	sb.WriteString(fmt.Sprintf("*Report generated at: %s*\n", time.Now().UTC().Format(time.RFC3339)))
 
 	return sb.String()
 }
