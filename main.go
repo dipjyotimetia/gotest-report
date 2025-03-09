@@ -248,8 +248,8 @@ func generateMarkdownReport(data *ReportData) string {
 
 	// Create a table of test results
 	sb.WriteString("## Test Results\n\n")
-	sb.WriteString("| Test | Status | Duration |\n")
-	sb.WriteString("| ---- | ------ | -------- |\n")
+	sb.WriteString("| Test | Status | Duration | Details |\n")
+	sb.WriteString("| ---- | ------ | -------- | ------- |\n")
 
 	// Sort tests by package and name for a more organized report
 	for _, testName := range data.SortedTestNames {
@@ -277,18 +277,14 @@ func generateMarkdownReport(data *ReportData) string {
 			displayName = filepath.Base(displayName)
 		}
 
-		sb.WriteString(fmt.Sprintf("| **%s** | %s %s | %.3fs |\n",
-			displayName, statusEmoji, result.Status, result.Duration))
-
-		// Add subtests if any, with indentation
+		// Prepare details column content
+		detailsColumn := ""
 		if len(result.SubTests) > 0 {
-			// Fix: Close the current table before adding details block
-			sb.WriteString("\n")
-			sb.WriteString("<details>\n")
-			sb.WriteString("<summary>Show Subtests</summary>\n\n")
-			// Fix: Re-create table headers for subtests
-			sb.WriteString("| SubTest | Status | Duration |\n")
-			sb.WriteString("| ------- | ------ | -------- |\n")
+			detailsColumn = fmt.Sprintf("<details><summary>%d subtests</summary>", len(result.SubTests))
+
+			// Add a nested table for subtests
+			detailsColumn += "<table><tr><th>Subtest</th><th>Status</th><th>Duration</th></tr>"
+
 			sort.Strings(result.SubTests)
 			for _, subTestName := range result.SubTests {
 				subTest := data.Results[subTestName]
@@ -304,14 +300,17 @@ func generateMarkdownReport(data *ReportData) string {
 					statusEmoji = "⏭️"
 				}
 
-				sb.WriteString(fmt.Sprintf("| &nbsp;&nbsp;&nbsp;&nbsp;↳ %s | %s %s | %.3fs |\n",
-					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration))
+				detailsColumn += fmt.Sprintf("<tr><td>%s</td><td>%s %s</td><td>%.3fs</td></tr>",
+					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration)
 			}
-			sb.WriteString("</details>\n")
-			// Fix: Restart the main table after details block
-			sb.WriteString("\n| Test | Status | Duration |\n")
-			sb.WriteString("| ---- | ------ | -------- |\n")
+
+			detailsColumn += "</table></details>"
+		} else {
+			detailsColumn = "-"
 		}
+
+		sb.WriteString(fmt.Sprintf("| **%s** | %s %s | %.3fs | %s |\n",
+			displayName, statusEmoji, result.Status, result.Duration, detailsColumn))
 	}
 	sb.WriteString("\n")
 
@@ -320,6 +319,9 @@ func generateMarkdownReport(data *ReportData) string {
 		sb.WriteString("## Failed Tests Details\n\n")
 		sb.WriteString("<details>\n")
 		sb.WriteString("<summary>Click to expand failed test details</summary>\n\n")
+
+		sb.WriteString("| Test | Error |\n")
+		sb.WriteString("| ---- | ----- |\n")
 
 		for _, testName := range data.SortedTestNames {
 			result := data.Results[testName]
@@ -341,52 +343,67 @@ func generateMarkdownReport(data *ReportData) string {
 					displayName = filepath.Base(displayName)
 				}
 
-				sb.WriteString(fmt.Sprintf("### %s\n\n", displayName))
+				failureOutput := ""
 
 				// Output for the main test
 				if result.Status == "FAIL" && len(result.Output) > 0 {
-					sb.WriteString("```\n") // Fix: Remove language identifier for better compatibility
+					failureOutput += "<pre>\n"
 					for _, line := range result.Output {
 						if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 							strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
-							sb.WriteString(fmt.Sprintf("%s\n", line))
+							failureOutput += fmt.Sprintf("%s\n", line)
 						}
 					}
-					sb.WriteString("```\n\n")
+					failureOutput += "</pre>\n"
 				}
 
 				// Output for failed subtests
+				failedSubtests := []string{}
 				for _, subTestName := range result.SubTests {
 					subTest := data.Results[subTestName]
 					if subTest.Status == "FAIL" {
-						subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
-						sb.WriteString(fmt.Sprintf("#### %s\n\n", subTestDisplayName))
+						failedSubtests = append(failedSubtests, subTestName)
+					}
+				}
 
+				if len(failedSubtests) > 0 {
+					failureOutput += "<details><summary>Failed Subtests</summary><table>\n"
+
+					for _, subTestName := range failedSubtests {
+						subTest := data.Results[subTestName]
+						subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
+
+						subFailureOutput := ""
 						if len(subTest.Output) > 0 {
-							sb.WriteString("```\n") // Fix: Remove language identifier for better compatibility
+							subFailureOutput = "<pre>"
 							for _, line := range subTest.Output {
 								if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 									strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
-									sb.WriteString(fmt.Sprintf("%s\n", line))
+									subFailureOutput += fmt.Sprintf("%s\n", line)
 								}
 							}
-							sb.WriteString("```\n\n")
+							subFailureOutput += "</pre>"
 						}
+
+						failureOutput += fmt.Sprintf("<tr><td><b>%s</b></td><td>%s</td></tr>\n",
+							subTestDisplayName, subFailureOutput)
 					}
+
+					failureOutput += "</table></details>\n"
 				}
+
+				sb.WriteString(fmt.Sprintf("| **%s** | %s |\n", displayName, failureOutput))
 			}
 		}
-
-		// Close the details tag
-		sb.WriteString("</details>\n\n")
+		sb.WriteString("\n</details>\n\n")
 	}
 
 	// Add duration metrics
 	sb.WriteString("## Test Durations\n\n")
 	sb.WriteString("<details>\n")
 	sb.WriteString("<summary>Click to expand test durations</summary>\n\n")
-	sb.WriteString("| Test | Duration |\n")
-	sb.WriteString("| ---- | -------- |\n")
+	sb.WriteString("| Test | Duration | Chart |\n")
+	sb.WriteString("| ---- | -------- | ----- |\n")
 
 	// Sort tests by duration (descending)
 	type testDuration struct {
@@ -418,7 +435,7 @@ func generateMarkdownReport(data *ReportData) string {
 		}
 	}
 
-	// Take top 15 longest tests (increased from 10)
+	// Take top 15 longest tests
 	count := 0
 	for _, d := range durations {
 		if count >= 15 {
@@ -450,13 +467,13 @@ func generateMarkdownReport(data *ReportData) string {
 			durationBar += "█"
 		}
 
-		sb.WriteString(fmt.Sprintf("| %s | %.3fs %s |\n", displayName, d.duration, durationBar))
+		sb.WriteString(fmt.Sprintf("| %s | %.3fs | %s |\n", displayName, d.duration, durationBar))
 		count++
 	}
 
 	// Close the details tag
 	sb.WriteString("\n</details>\n\n")
-	// Fix: Add more spacing before timestamp for better readability
+	// Add timestamp
 	sb.WriteString(fmt.Sprintf("*Report generated at: %s*\n", time.Now().UTC().Format(time.RFC3339)))
 
 	return sb.String()
