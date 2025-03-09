@@ -68,23 +68,19 @@ runs:
         path: ${{ inputs.output-file }}
 
     - name: Write to GitHub Actions Summary
-      if: ${{ inputs.write-summary == 'true' }}
+      if: inputs.write-summary == 'true'
       shell: bash
-      run: |
-        # Write the test report to GitHub Actions Summary
-        cat "${{ inputs.output-file }}" >> $GITHUB_STEP_SUMMARY
+      run: cat "${{ inputs.output-file }}" >> $GITHUB_STEP_SUMMARY
 
-    - name: Add workflow run link to report
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+    - name: Process report for PR comment
+      if: inputs.comment-pr == 'true' && github.event_name == 'pull_request'
+      id: process-report
       shell: bash
       run: |
-        # Create a temporary file
+        # Add workflow run link to report
         TEMP_FILE=$(mktemp)
-        
-        # Extract all content before the timestamp line
         sed '/Report generated at/,$d' "${{ inputs.output-file }}" > "$TEMP_FILE"
         
-        # Add workflow run link and timestamp
         echo "" >> "$TEMP_FILE"
         echo "---" >> "$TEMP_FILE"
         
@@ -95,15 +91,8 @@ runs:
         echo "[View Workflow Run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> "$TEMP_FILE"
         echo "" >> "$TEMP_FILE"
         echo "Report generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$TEMP_FILE"
-        
-        # Replace original file with modified version
         mv "$TEMP_FILE" "${{ inputs.output-file }}"
-      
-    - name: Prepare report for job
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
-      id: prepare-report
-      shell: bash
-      run: |
+        
         # Process report based on settings
         if [ "${{ inputs.summary-only }}" == "true" ]; then
           # Extract only summary section
@@ -122,46 +111,36 @@ runs:
             TEMP_FILE=$(mktemp)
             echo "# ${{ inputs.job-name }} Test Results" > "$TEMP_FILE"
             echo "" >> "$TEMP_FILE"
-            # Remove existing title and append the rest
             tail -n +2 "${{ inputs.output-file }}" >> "$TEMP_FILE"
             REPORT_CONTENT=$(cat "$TEMP_FILE")
           fi
         fi
         
-        # Save for next step
+        # Save for next steps
         echo "REPORT<<EOF" >> $GITHUB_ENV
         echo "$REPORT_CONTENT" >> $GITHUB_ENV
         echo "EOF" >> $GITHUB_ENV
+        
+        # Detect test status
+        if grep -q "Status-FAILED-red" "${{ inputs.output-file }}"; then
+          echo "TEST_STATUS=FAILED" >> $GITHUB_OUTPUT
+        elif grep -q "Status-PASSED-brightgreen" "${{ inputs.output-file }}"; then
+          echo "TEST_STATUS=PASSED" >> $GITHUB_OUTPUT
+        else
+          echo "TEST_STATUS=SKIPPED" >> $GITHUB_OUTPUT
+        fi
 
-    - name: Find Comment
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+    - name: Find existing PR comments
+      if: inputs.comment-pr == 'true' && github.event_name == 'pull_request'
       uses: peter-evans/find-comment@v3
-      id: find-comment
+      id: find-comments
       with:
         issue-number: ${{ github.event.pull_request.number }}
         comment-author: 'github-actions[bot]'
         body-includes: "Test Summary Report"
-
-    - name: Check if previous tests failed
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.find-comment.outputs.comment-id != '' }}
-      id: check-previous-status
-      shell: bash
-      run: |
-        if echo "${{ steps.find-comment.outputs.comment-body }}" | grep -q "Status-FAILED"; then
-          echo "HAD_FAILED_TESTS=true" >> $GITHUB_ENV
-        else
-          echo "HAD_FAILED_TESTS=false" >> $GITHUB_ENV
-        fi
         
-        # Check if current tests pass
-        if grep -q "Status-PASSED" "${{ inputs.output-file }}"; then
-          echo "NOW_PASSING=true" >> $GITHUB_ENV
-        else
-          echo "NOW_PASSING=false" >> $GITHUB_ENV
-        fi
-
-    - name: Create or update job comment for multi-job setup
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && inputs.job-name != '' }}
+    - name: Find job specific comment
+      if: inputs.comment-pr == 'true' && github.event_name == 'pull_request' && inputs.job-name != ''
       uses: peter-evans/find-comment@v3
       id: find-job-comment
       with:
@@ -169,27 +148,48 @@ runs:
         comment-author: 'github-actions[bot]'
         body-includes: "${{ inputs.job-name }} Test Results"
 
-    - name: Save or update individual job report
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' && inputs.job-name != '' }}
+    - name: Check previous test status
+      if: inputs.comment-pr == 'true' && github.event_name == 'pull_request' && steps.find-comments.outputs.comment-id != ''
+      id: check-status
+      shell: bash
+      run: |
+        if echo "${{ steps.find-comments.outputs.comment-body }}" | grep -q "Status-FAILED"; then
+          echo "HAD_FAILED_TESTS=true" >> $GITHUB_ENV
+          
+          if [ "${{ steps.process-report.outputs.TEST_STATUS }}" == "PASSED" ]; then
+            echo "NOW_PASSING=true" >> $GITHUB_ENV
+            echo "STATUS_MESSAGE=🎉 **Previously failed tests are now passing!** 🎉" >> $GITHUB_ENV
+          else
+            echo "NOW_PASSING=false" >> $GITHUB_ENV
+            echo "STATUS_MESSAGE=" >> $GITHUB_ENV
+          fi
+        else
+          echo "HAD_FAILED_TESTS=false" >> $GITHUB_ENV
+          echo "NOW_PASSING=false" >> $GITHUB_ENV
+          echo "STATUS_MESSAGE=" >> $GITHUB_ENV
+        fi
+
+    - name: Update individual job comment
+      if: inputs.comment-pr == 'true' && github.event_name == 'pull_request' && inputs.job-name != ''
       uses: peter-evans/create-or-update-comment@v4
       with:
         issue-number: ${{ github.event.pull_request.number }}
         comment-id: ${{ steps.find-job-comment.outputs.comment-id }}
         body: |
           # ${{ inputs.job-name }} Test Results
-          ${{ env.HAD_FAILED_TESTS == 'true' && env.NOW_PASSING == 'true' && '🎉 **Previously failed tests are now passing!** 🎉' || '' }}
+          ${{ env.STATUS_MESSAGE }}
 
           ${{ env.REPORT }}
         edit-mode: replace
 
     - name: Update main summary comment
-      if: ${{ inputs.comment-pr == 'true' && github.event_name == 'pull_request' }}
+      if: inputs.comment-pr == 'true' && github.event_name == 'pull_request'
       uses: peter-evans/create-or-update-comment@v4
       with:
         issue-number: ${{ github.event.pull_request.number }}
-        comment-id: ${{ steps.find-comment.outputs.comment-id }}
+        comment-id: ${{ steps.find-comments.outputs.comment-id }}
         body: |
-          ${{ env.HAD_FAILED_TESTS == 'true' && env.NOW_PASSING == 'true' && '🎉 **Previously failed tests are now passing!** 🎉' || '' }}
+          ${{ env.STATUS_MESSAGE }}
 
           ${{ env.REPORT }}
           
@@ -200,65 +200,56 @@ runs:
           </details>
         edit-mode: replace
 
-   # Fix the issue creation step to make it independent of the fail-on-test-failure option
     - name: Create issue for test failures
-      if: ${{ inputs.create-issue-on-failure == 'true' }}
+      if: inputs.create-issue-on-failure == 'true' && steps.process-report.outputs.TEST_STATUS == 'FAILED'
       uses: actions/github-script@v6
       with:
         github-token: ${{ github.token }}
         script: |
           const fs = require('fs');
           
-          // Read the test report
+          const runUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+          const issueTitle = `${{ inputs.issue-title }} - ${new Date().toISOString().split('T')[0]}`;
           const reportContent = fs.readFileSync('${{ inputs.output-file }}', 'utf8');
           
-          // Only create issue if tests failed
-          if (reportContent.includes('Status-FAILED-red')) {
-            const runUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
-            const issueTitle = `${{ inputs.issue-title }} - ${new Date().toISOString().split('T')[0]}`;
-            
-            // Create the issue body with test results
-            let issueBody = `## Test Failure Report\n\n`;
-            issueBody += `Test failures detected in workflow run: [View Workflow Run](${runUrl})\n\n`;
-            issueBody += `### Test Report\n\n`;
+          // Create the issue body with test results
+          let issueBody = `## Test Failure Report\n\n`;
+          issueBody += `Test failures detected in workflow run: [View Workflow Run](${runUrl})\n\n`;
+          issueBody += `### Test Report\n\n`;
 
-            const failedTestsSection = reportContent.match(/## Test Results[\s\S]*?(?=##)/m);
-            
-            if (failedTestsSection) {
-              issueBody += failedTestsSection[0] + "\n";
-            } else {
-              issueBody += "No detailed failure information available.\n";
-            }
-            
-            // Add reference to pull request if available
-            if ('${{ github.event_name }}' === 'pull_request') {
-              const prNumber = '${{ github.event.pull_request.number }}';
-              const prLink = `https://github.com/${{ github.repository }}/pull/${prNumber}`;
-              issueBody += `\n### Related Pull Request\n\n`;
-              issueBody += `This failure occurred in [PR #${prNumber}](${prLink})`;
-            }
-            
-            issueBody += `\n\n_This issue was automatically created by the test workflow._`;
-            
-            // Parse labels and assignees
-            const labels = '${{ inputs.issue-labels }}'.split(',').filter(l => l.trim() !== '');
-            const assignees = '${{ inputs.issue-assignees }}'.split(',').filter(a => a.trim() !== '');
-            
-            // Create the issue
-            const { data } = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: issueTitle,
-              body: issueBody,
-              labels: labels,
-              assignees: assignees
-            });
-            
-            console.log(`Created issue #${data.number}: ${data.html_url}`);
-            
-            // Add the issue link to the GitHub summary
-            await core.summary.addRaw(`## :warning: Test Failures Detected\n\nAn issue has been created: [#${data.number}: ${issueTitle}](${data.html_url})`).write();
+          const failedTestsSection = reportContent.match(/## Test Results[\s\S]*?(?=##)/m);
+          
+          if (failedTestsSection) {
+            issueBody += failedTestsSection[0] + "\n";
           } else {
-            console.log("No test failures detected, skipping issue creation");
+            issueBody += "No detailed failure information available.\n";
           }
-    
+          
+          // Add reference to pull request if available
+          if ('${{ github.event_name }}' === 'pull_request') {
+            const prNumber = '${{ github.event.pull_request.number }}';
+            const prLink = `https://github.com/${{ github.repository }}/pull/${prNumber}`;
+            issueBody += `\n### Related Pull Request\n\n`;
+            issueBody += `This failure occurred in [PR #${prNumber}](${prLink})`;
+          }
+          
+          issueBody += `\n\n_This issue was automatically created by the test workflow._`;
+          
+          // Parse labels and assignees
+          const labels = '${{ inputs.issue-labels }}'.split(',').filter(l => l.trim() !== '');
+          const assignees = '${{ inputs.issue-assignees }}'.split(',').filter(a => a.trim() !== '');
+          
+          // Create the issue
+          const { data } = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: issueTitle,
+            body: issueBody,
+            labels: labels,
+            assignees: assignees
+          });
+          
+          console.log(`Created issue #${data.number}: ${data.html_url}`);
+          
+          // Add the issue link to the GitHub summary
+          await core.summary.addRaw(`## :warning: Test Failures Detected\n\nAn issue has been created: [#${data.number}: ${issueTitle}](${data.html_url})`).write();

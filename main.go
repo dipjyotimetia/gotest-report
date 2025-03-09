@@ -248,8 +248,8 @@ func generateMarkdownReport(data *ReportData) string {
 
 	// Create a table of test results
 	sb.WriteString("## Test Results\n\n")
-	sb.WriteString("| Test | Status | Duration |\n")
-	sb.WriteString("| ---- | ------ | -------- |\n")
+	sb.WriteString("| Test | Status | Duration | Details |\n")
+	sb.WriteString("| ---- | ------ | -------- | ------- |\n")
 
 	// Sort tests by package and name for a more organized report
 	for _, testName := range data.SortedTestNames {
@@ -277,35 +277,43 @@ func generateMarkdownReport(data *ReportData) string {
 			displayName = filepath.Base(displayName)
 		}
 
-		sb.WriteString(fmt.Sprintf("| **%s** | %s %s | %.3fs |\n",
-			displayName, statusEmoji, result.Status, result.Duration))
+		// Prepare details column content
+		detailsColumn := ""
+		if len(result.SubTests) > 0 {
+			detailsColumn = fmt.Sprintf("<details><summary>%d subtests</summary>", len(result.SubTests))
 
-		// Add subtests if any, with indentation
-		sort.Strings(result.SubTests)
-		for _, subTestName := range result.SubTests {
-			subTest := data.Results[subTestName]
+			// Add a nested table for subtests
+			detailsColumn += "<table><tr><th>Subtest</th><th>Status</th><th>Duration</th></tr>"
 
-			// Get subtest short name (part after the last slash)
-			subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
+			sort.Strings(result.SubTests)
+			for _, subTestName := range result.SubTests {
+				subTest := data.Results[subTestName]
+				subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
 
-			statusEmoji := "⏺️"
-			switch subTest.Status {
-			case "PASS":
-				statusEmoji = "✅"
-			case "FAIL":
-				statusEmoji = "❌"
-			case "SKIP":
-				statusEmoji = "⏭️"
+				statusEmoji := "⏺️"
+				switch subTest.Status {
+				case "PASS":
+					statusEmoji = "✅"
+				case "FAIL":
+					statusEmoji = "❌"
+				case "SKIP":
+					statusEmoji = "⏭️"
+				}
+
+				detailsColumn += fmt.Sprintf("<tr><td>%s</td><td>%s %s</td><td>%.3fs</td></tr>",
+					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration)
 			}
 
-			sb.WriteString(fmt.Sprintf("| &nbsp;&nbsp;&nbsp;&nbsp;↳ %s | %s %s | %.3fs |\n",
-				subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration))
+			detailsColumn += "</table></details>"
+		} else {
+			detailsColumn = "-"
 		}
+
+		sb.WriteString(fmt.Sprintf("| **%s** | %s %s | %.3fs | %s |\n",
+			displayName, statusEmoji, result.Status, result.Duration, detailsColumn))
 	}
 	sb.WriteString("\n")
 
-	// If there are failures, show details
-	// If there are failures, show details
 	if data.FailedTests > 0 {
 		sb.WriteString("## Failed Tests Details\n\n")
 		sb.WriteString("<details>\n")
@@ -437,7 +445,7 @@ func generateMarkdownReport(data *ReportData) string {
 
 	// Close the details tag
 	sb.WriteString("\n</details>\n")
-	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().In(time.FixedZone("AEST", 10*60*60)).Format("02/01/06-15:04:05")))
+	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().Format("02/01/06-15:04:05")))
 
 	return sb.String()
 }
