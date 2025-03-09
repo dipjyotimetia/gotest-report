@@ -314,14 +314,10 @@ func generateMarkdownReport(data *ReportData) string {
 	}
 	sb.WriteString("\n")
 
-	// If there are failures, show details
 	if data.FailedTests > 0 {
 		sb.WriteString("## Failed Tests Details\n\n")
 		sb.WriteString("<details>\n")
 		sb.WriteString("<summary>Click to expand failed test details</summary>\n\n")
-
-		sb.WriteString("| Test | Error |\n")
-		sb.WriteString("| ---- | ----- |\n")
 
 		for _, testName := range data.SortedTestNames {
 			result := data.Results[testName]
@@ -343,67 +339,52 @@ func generateMarkdownReport(data *ReportData) string {
 					displayName = filepath.Base(displayName)
 				}
 
-				failureOutput := ""
+				sb.WriteString(fmt.Sprintf("### %s\n\n", displayName))
 
 				// Output for the main test
 				if result.Status == "FAIL" && len(result.Output) > 0 {
-					failureOutput += "<pre>\n"
+					sb.WriteString("```go\n")
 					for _, line := range result.Output {
 						if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 							strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
-							failureOutput += fmt.Sprintf("%s\n", line)
+							sb.WriteString(fmt.Sprintf("%s\n", line))
 						}
 					}
-					failureOutput += "</pre>\n"
+					sb.WriteString("```\n\n")
 				}
 
 				// Output for failed subtests
-				failedSubtests := []string{}
 				for _, subTestName := range result.SubTests {
 					subTest := data.Results[subTestName]
 					if subTest.Status == "FAIL" {
-						failedSubtests = append(failedSubtests, subTestName)
-					}
-				}
-
-				if len(failedSubtests) > 0 {
-					failureOutput += "<details><summary>Failed Subtests</summary><table>\n"
-
-					for _, subTestName := range failedSubtests {
-						subTest := data.Results[subTestName]
 						subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
+						sb.WriteString(fmt.Sprintf("#### %s\n\n", subTestDisplayName))
 
-						subFailureOutput := ""
 						if len(subTest.Output) > 0 {
-							subFailureOutput = "<pre>"
+							sb.WriteString("```go\n")
 							for _, line := range subTest.Output {
 								if strings.Contains(line, "FAIL") || strings.Contains(line, "Error") ||
 									strings.Contains(line, "panic:") || strings.Contains(line, "--- FAIL") {
-									subFailureOutput += fmt.Sprintf("%s\n", line)
+									sb.WriteString(fmt.Sprintf("%s\n", line))
 								}
 							}
-							subFailureOutput += "</pre>"
+							sb.WriteString("```\n\n")
 						}
-
-						failureOutput += fmt.Sprintf("<tr><td><b>%s</b></td><td>%s</td></tr>\n",
-							subTestDisplayName, subFailureOutput)
 					}
-
-					failureOutput += "</table></details>\n"
 				}
-
-				sb.WriteString(fmt.Sprintf("| **%s** | %s |\n", displayName, failureOutput))
 			}
 		}
-		sb.WriteString("\n</details>\n\n")
+
+		// Close the details tag
+		sb.WriteString("</details>\n\n")
 	}
 
 	// Add duration metrics
 	sb.WriteString("## Test Durations\n\n")
 	sb.WriteString("<details>\n")
 	sb.WriteString("<summary>Click to expand test durations</summary>\n\n")
-	sb.WriteString("| Test | Duration | Chart |\n")
-	sb.WriteString("| ---- | -------- | ----- |\n")
+	sb.WriteString("| Test | Duration |\n")
+	sb.WriteString("| ---- | -------- |\n")
 
 	// Sort tests by duration (descending)
 	type testDuration struct {
@@ -426,16 +407,13 @@ func generateMarkdownReport(data *ReportData) string {
 	})
 
 	// Scale factor for bar chart - handle outliers better
-	maxDuration := 0.0
-	if len(durations) > 0 {
-		maxDuration = durations[0].duration
-		if len(durations) > 1 && maxDuration > durations[1].duration*3 {
-			// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
-			maxDuration = durations[1].duration * 1.5
-		}
+	maxDuration := durations[0].duration
+	if len(durations) > 1 && maxDuration > durations[1].duration*3 {
+		// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
+		maxDuration = durations[1].duration * 1.5
 	}
 
-	// Take top 15 longest tests
+	// Take top 15 longest tests (increased from 10)
 	count := 0
 	for _, d := range durations {
 		if count >= 15 {
@@ -456,25 +434,18 @@ func generateMarkdownReport(data *ReportData) string {
 		// Add bar chart using unicode block characters
 		durationBar := ""
 		scaleFactor := 25.0
-		// Fix: Avoid division by zero
-		var barLength int
-		if maxDuration > 0 {
-			barLength = max(int(d.duration*scaleFactor/maxDuration), 1)
-		} else {
-			barLength = 1
-		}
+		barLength := max(int(d.duration*scaleFactor/maxDuration), 1)
 		for range barLength {
 			durationBar += "█"
 		}
 
-		sb.WriteString(fmt.Sprintf("| %s | %.3fs | %s |\n", displayName, d.duration, durationBar))
+		sb.WriteString(fmt.Sprintf("| %s | %.3fs %s |\n", displayName, d.duration, durationBar))
 		count++
 	}
 
 	// Close the details tag
-	sb.WriteString("\n</details>\n\n")
-	// Add timestamp
-	sb.WriteString(fmt.Sprintf("*Report generated at: %s*\n", time.Now().UTC().Format(time.RFC3339)))
+	sb.WriteString("\n</details>\n")
+	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().In(time.FixedZone("AEST", 10*60*60)).Format("02/01/06-15:04:05")))
 
 	return sb.String()
 }
