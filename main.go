@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,6 +15,14 @@ import (
 )
 
 var version = "dev"
+
+// Color constants for HTML styling
+const (
+	htmlPassColor    = "#2cbe4e"
+	htmlFailColor    = "#cb2431"
+	htmlSkipColor    = "#eea236"
+	htmlNeutralColor = "#6a737d"
+)
 
 // TestEvent represents a single event from go test -json output
 type TestEvent struct {
@@ -46,6 +55,7 @@ type ReportData struct {
 	TotalDuration   float64
 	Results         map[string]*TestResult
 	SortedTestNames []string
+	PackageGroups   map[string][]string
 }
 
 func main() {
@@ -188,6 +198,8 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 		Results: results,
 	}
 
+	// Group tests by package
+	packageGroups := make(map[string][]string)
 	var sortedNames []string
 	for name, result := range results {
 		// Only count root tests in summary (not subtests)
@@ -195,6 +207,13 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 			sortedNames = append(sortedNames, name)
 			reportData.TotalTests++
 			reportData.TotalDuration += result.Duration
+
+			// Group by package
+			pkg := result.Package
+			if pkg == "" {
+				pkg = "unknown"
+			}
+			packageGroups[pkg] = append(packageGroups[pkg], name)
 
 			switch result.Status {
 			case "PASS":
@@ -209,8 +228,23 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 
 	sort.Strings(sortedNames)
 	reportData.SortedTestNames = sortedNames
+	reportData.PackageGroups = packageGroups
 
 	return reportData, nil
+}
+
+// getDurationColor returns a color gradient based on duration percentage
+func getDurationColor(duration, maxDuration float64) string {
+	// Green to red gradient based on duration percentage
+	ratio := duration / maxDuration
+	if ratio > 1.0 {
+		ratio = 1.0
+	}
+
+	// Blend from green (low duration) to yellow (medium) to red (high duration)
+	r := int(255 * math.Min(1.0, ratio*2))
+	g := int(255 * math.Min(1.0, 2-ratio*2))
+	return fmt.Sprintf("#%02x%02x00", r, g)
 }
 
 func generateMarkdownReport(data *ReportData) string {
@@ -219,11 +253,44 @@ func generateMarkdownReport(data *ReportData) string {
 	// Generate header
 	sb.WriteString("# Test Summary Report\n\n")
 
-	// Generate summary
+	// Add visual summary cards using HTML
 	passPercentage := 0.0
-	passPercentageDisplay := "N/A"
 	if data.TotalTests > 0 {
 		passPercentage = float64(data.PassedTests) / float64(data.TotalTests) * 100
+	}
+	passColor := htmlPassColor
+	if passPercentage < 80 {
+		passColor = htmlFailColor
+	} else if passPercentage < 100 {
+		passColor = htmlSkipColor
+	}
+
+	sb.WriteString("<div style=\"display: flex; gap: 20px; margin-bottom: 20px;\">\n")
+
+	// Total Tests Card
+	sb.WriteString("<div style=\"flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px; text-align: center;\">\n")
+	sb.WriteString(fmt.Sprintf("<div style=\"font-size: 24px; font-weight: bold;\">%d</div>\n", data.TotalTests))
+	sb.WriteString("<div style=\"font-size: 12px; color: #666;\">Total Tests</div>\n")
+	sb.WriteString("</div>\n")
+
+	// Success Rate Card
+	sb.WriteString("<div style=\"flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px; text-align: center;\">\n")
+	sb.WriteString(fmt.Sprintf("<div style=\"font-size: 24px; font-weight: bold; color: %s;\">%.1f%%</div>\n",
+		passColor, passPercentage))
+	sb.WriteString("<div style=\"font-size: 12px; color: #666;\">Success Rate</div>\n")
+	sb.WriteString("</div>\n")
+
+	// Duration Card
+	sb.WriteString("<div style=\"flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px; text-align: center;\">\n")
+	sb.WriteString(fmt.Sprintf("<div style=\"font-size: 24px; font-weight: bold;\">%.2fs</div>\n", data.TotalDuration))
+	sb.WriteString("<div style=\"font-size: 12px; color: #666;\">Total Duration</div>\n")
+	sb.WriteString("</div>\n")
+
+	sb.WriteString("</div>\n\n")
+
+	// Generate summary
+	passPercentageDisplay := "N/A"
+	if data.TotalTests > 0 {
 		passPercentageDisplay = fmt.Sprintf("%.1f%%", passPercentage)
 	}
 
@@ -246,73 +313,104 @@ func generateMarkdownReport(data *ReportData) string {
 		sb.WriteString("![Status](https://img.shields.io/badge/Status-PASSED-brightgreen)\n\n")
 	}
 
-	// Create a table of test results
-	sb.WriteString("## Test Results\n\n")
-	sb.WriteString("| Test | Status | Duration | Details |\n")
-	sb.WriteString("| ---- | ------ | -------- | ------- |\n")
+	// Add Coverage Badge if available
+	// Note: This is a placeholder - you would need to integrate with actual coverage data
+	// coveragePercentage := 65.4 // This would come from your actual coverage data
+	// sb.WriteString(fmt.Sprintf("![Coverage](https://img.shields.io/badge/Coverage-%.1f%%25-%s)\n\n",
+	//     coveragePercentage, getCoverageColor(coveragePercentage)))
 
-	// Sort tests by package and name for a more organized report
-	for _, testName := range data.SortedTestNames {
-		result := data.Results[testName]
+	// Group tests by package
+	sb.WriteString("## Test Results by Package\n\n")
 
-		// Skip subtests here - we'll show them nested
-		if result.IsSubTest {
-			continue
-		}
+	var packageNames []string
+	for pkg := range data.PackageGroups {
+		packageNames = append(packageNames, pkg)
+	}
+	sort.Strings(packageNames)
 
-		// Determine status emoji
-		statusEmoji := "⏺️"
-		switch result.Status {
-		case "PASS":
-			statusEmoji = "✅"
-		case "FAIL":
-			statusEmoji = "❌"
-		case "SKIP":
-			statusEmoji = "⏭️"
-		}
+	for _, pkg := range packageNames {
+		testNames := data.PackageGroups[pkg]
+		sb.WriteString(fmt.Sprintf("<details>\n<summary>Package: <strong>%s</strong> (%d tests)</summary>\n\n",
+			pkg, len(testNames)))
 
-		// Format test name to be more readable (remove package prefix if present)
-		displayName := result.Name
-		if strings.Contains(displayName, "/") && !result.IsSubTest {
-			displayName = filepath.Base(displayName)
-		}
+		// Create a table of test results for this package
+		sb.WriteString("| Test | Status | Duration | Details |\n")
+		sb.WriteString("| ---- | ------ | -------- | ------- |\n")
 
-		// Prepare details column content
-		detailsColumn := ""
-		if len(result.SubTests) > 0 {
-			detailsColumn = fmt.Sprintf("<details><summary>%d subtests</summary>", len(result.SubTests))
+		// Sort package tests by name
+		sort.Strings(testNames)
 
-			// Add a nested table for subtests
-			detailsColumn += "<table><tr><th>Subtest</th><th>Status</th><th>Duration</th></tr>"
+		for _, testName := range testNames {
+			result := data.Results[testName]
 
-			sort.Strings(result.SubTests)
-			for _, subTestName := range result.SubTests {
-				subTest := data.Results[subTestName]
-				subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
-
-				statusEmoji := "⏺️"
-				switch subTest.Status {
-				case "PASS":
-					statusEmoji = "✅"
-				case "FAIL":
-					statusEmoji = "❌"
-				case "SKIP":
-					statusEmoji = "⏭️"
-				}
-
-				detailsColumn += fmt.Sprintf("<tr><td>%s</td><td>%s %s</td><td>%.3fs</td></tr>",
-					subTestDisplayName, statusEmoji, subTest.Status, subTest.Duration)
+			// Skip subtests here - we'll show them nested
+			if result.IsSubTest {
+				continue
 			}
 
-			detailsColumn += "</table></details>"
-		} else {
-			detailsColumn = "-"
+			// Determine status emoji and color
+			statusEmoji := "⏺️"
+			statusColor := htmlNeutralColor
+			switch result.Status {
+			case "PASS":
+				statusEmoji = "✅"
+				statusColor = htmlPassColor
+			case "FAIL":
+				statusEmoji = "❌"
+				statusColor = htmlFailColor
+			case "SKIP":
+				statusEmoji = "⏭️"
+				statusColor = htmlSkipColor
+			}
+
+			// Format test name to be more readable (remove package prefix if present)
+			displayName := result.Name
+			if strings.Contains(displayName, "/") && !result.IsSubTest {
+				displayName = filepath.Base(displayName)
+			}
+
+			// Prepare details column content
+			detailsColumn := ""
+			if len(result.SubTests) > 0 {
+				detailsColumn = fmt.Sprintf("<details><summary>%d subtests</summary>", len(result.SubTests))
+
+				// Add a nested table for subtests
+				detailsColumn += "<table><tr><th>Subtest</th><th>Status</th><th>Duration</th></tr>"
+
+				sort.Strings(result.SubTests)
+				for _, subTestName := range result.SubTests {
+					subTest := data.Results[subTestName]
+					subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
+
+					subStatusEmoji := "⏺️"
+					subStatusColor := htmlNeutralColor
+					switch subTest.Status {
+					case "PASS":
+						subStatusEmoji = "✅"
+						subStatusColor = htmlPassColor
+					case "FAIL":
+						subStatusEmoji = "❌"
+						subStatusColor = htmlFailColor
+					case "SKIP":
+						subStatusEmoji = "⏭️"
+						subStatusColor = htmlSkipColor
+					}
+
+					detailsColumn += fmt.Sprintf("<tr><td>%s</td><td><span style=\"color: %s\">%s %s</span></td><td>%.3fs</td></tr>",
+						subTestDisplayName, subStatusColor, subStatusEmoji, subTest.Status, subTest.Duration)
+				}
+
+				detailsColumn += "</table></details>"
+			} else {
+				detailsColumn = "-"
+			}
+
+			sb.WriteString(fmt.Sprintf("| **%s** | <span style=\"color: %s\">%s %s</span> | %.3fs | %s |\n",
+				displayName, statusColor, statusEmoji, result.Status, result.Duration, detailsColumn))
 		}
 
-		sb.WriteString(fmt.Sprintf("| **%s** | %s %s | %.3fs | %s |\n",
-			displayName, statusEmoji, result.Status, result.Duration, detailsColumn))
+		sb.WriteString("\n</details>\n\n")
 	}
-	sb.WriteString("\n")
 
 	if data.FailedTests > 0 {
 		sb.WriteString("## Failed Tests Details\n\n")
@@ -339,7 +437,8 @@ func generateMarkdownReport(data *ReportData) string {
 					displayName = filepath.Base(displayName)
 				}
 
-				sb.WriteString(fmt.Sprintf("### %s\n\n", displayName))
+				sb.WriteString(fmt.Sprintf("<div style=\"margin-bottom: 20px; padding: 10px; border-left: 4px solid %s; background-color: #ffeef0\">\n", htmlFailColor))
+				sb.WriteString(fmt.Sprintf("<h3>%s</h3>\n\n", displayName))
 
 				// Output for the main test
 				if result.Status == "FAIL" && len(result.Output) > 0 {
@@ -358,7 +457,7 @@ func generateMarkdownReport(data *ReportData) string {
 					subTest := data.Results[subTestName]
 					if subTest.Status == "FAIL" {
 						subTestDisplayName := subTestName[strings.LastIndex(subTestName, "/")+1:]
-						sb.WriteString(fmt.Sprintf("#### %s\n\n", subTestDisplayName))
+						sb.WriteString(fmt.Sprintf("<h4>%s</h4>\n\n", subTestDisplayName))
 
 						if len(subTest.Output) > 0 {
 							sb.WriteString("```go\n")
@@ -372,6 +471,7 @@ func generateMarkdownReport(data *ReportData) string {
 						}
 					}
 				}
+				sb.WriteString("</div>\n\n")
 			}
 		}
 
@@ -407,13 +507,16 @@ func generateMarkdownReport(data *ReportData) string {
 	})
 
 	// Scale factor for bar chart - handle outliers better
-	maxDuration := durations[0].duration
-	if len(durations) > 1 && maxDuration > durations[1].duration*3 {
-		// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
-		maxDuration = durations[1].duration * 1.5
+	maxDuration := 0.0
+	if len(durations) > 0 {
+		maxDuration = durations[0].duration
+		if len(durations) > 1 && maxDuration > durations[1].duration*3 {
+			// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
+			maxDuration = durations[1].duration * 1.5
+		}
 	}
 
-	// Take top 15 longest tests (increased from 10)
+	// Take top 15 longest tests
 	count := 0
 	for _, d := range durations {
 		if count >= 15 {
@@ -431,21 +534,69 @@ func generateMarkdownReport(data *ReportData) string {
 			displayName = "↳ " + d.name[strings.LastIndex(d.name, "/")+1:]
 		}
 
-		// Add bar chart using unicode block characters
-		durationBar := ""
+		// Add bar chart using unicode block characters with color
+		barColor := getDurationColor(d.duration, maxDuration)
 		scaleFactor := 25.0
 		barLength := max(int(d.duration*scaleFactor/maxDuration), 1)
-		for range barLength {
-			durationBar += "█"
-		}
+		durationBar := strings.Repeat("█", barLength)
 
-		sb.WriteString(fmt.Sprintf("| %s | %.3fs %s |\n", displayName, d.duration, durationBar))
+		sb.WriteString(fmt.Sprintf("| %s | %.3fs <span style=\"color: %s\">%s</span> |\n",
+			displayName, d.duration, barColor, durationBar))
 		count++
 	}
 
 	// Close the details tag
-	sb.WriteString("\n</details>\n")
-	sb.WriteString(fmt.Sprintf("Report generated at: %s\n", time.Now().Format("02/01/06-15:04:05")))
+	sb.WriteString("\n</details>\n\n")
+
+	// Add test timeline visualization
+	sb.WriteString("## Test Timeline\n\n")
+	sb.WriteString("<details>\n")
+	sb.WriteString("<summary>Click to expand test execution timeline</summary>\n\n")
+
+	// Create a timeline diagram using mermaid
+	sb.WriteString("```mermaid\ngantt\n")
+	sb.WriteString("    title Test Execution Timeline\n")
+	sb.WriteString("    dateFormat X\n")
+	sb.WriteString("    axisFormat %S.%L\n\n")
+
+	// Add timeline data
+	var startTime float64 = 0
+	timelineTests := durations
+	if len(timelineTests) > 15 {
+		timelineTests = timelineTests[:15] // Top 15 tests by duration
+	}
+
+	for _, d := range timelineTests {
+		testName := d.name
+		if len(testName) > 30 {
+			testName = "..." + testName[len(testName)-27:]
+		}
+
+		// Escape characters that might break mermaid syntax
+		testName = strings.ReplaceAll(testName, ":", " -")
+		testName = strings.ReplaceAll(testName, "/", "-")
+
+		sb.WriteString(fmt.Sprintf("    %s: %f, %f\n",
+			testName, startTime, startTime+d.duration))
+		startTime += d.duration * 0.2 // Offset for visualization
+	}
+
+	sb.WriteString("```\n</details>\n\n")
+
+	// Format the timestamp more elegantly
+	currentTime := time.Now()
+	sb.WriteString("\n---\n\n")
+	sb.WriteString(fmt.Sprintf("📆 **Report Date:** %s  \n", currentTime.Format("January 2, 2006")))
+	sb.WriteString(fmt.Sprintf("⏰ **Report Time:** %s  \n", currentTime.Format("15:04:05 MST")))
+	sb.WriteString(fmt.Sprintf("🖥 **Generated On:** %s\n", currentTime.Format("Monday at 15:04")))
 
 	return sb.String()
+}
+
+// Helper functions
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
