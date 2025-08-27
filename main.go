@@ -58,7 +58,6 @@ func main() {
 		fmt.Printf("gotest-report version %s\n", version)
 		os.Exit(0)
 	}
-	flag.Parse()
 
 	var reader io.Reader = os.Stdin
 	if *inputFile != "" {
@@ -88,7 +87,11 @@ func main() {
 }
 
 func processTestEvents(reader io.Reader) (*ReportData, error) {
+	// Use a Scanner with an increased buffer to safely handle long JSON lines from `go test -json`.
 	scanner := bufio.NewScanner(reader)
+	// Set the initial and maximum token size to allow large outputs (up to ~10MB per line).
+	buf := make([]byte, 0, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024)
 	results := make(map[string]*TestResult)
 	testOutputMap := make(map[string][]string)
 
@@ -96,6 +99,10 @@ func processTestEvents(reader io.Reader) (*ReportData, error) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if strings.TrimSpace(line) == "" {
+			// Skip blank lines that can occur in piped or concatenated outputs
+			continue
+		}
 		var event TestEvent
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
 			return nil, fmt.Errorf("error unmarshalling JSON: %v", err)
@@ -406,11 +413,18 @@ func generateMarkdownReport(data *ReportData) string {
 		return durations[i].duration > durations[j].duration
 	})
 
-	// Scale factor for bar chart - handle outliers better
-	maxDuration := durations[0].duration
-	if len(durations) > 1 && maxDuration > durations[1].duration*3 {
-		// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
-		maxDuration = durations[1].duration * 1.5
+	// Scale factor for bar chart - handle outliers better and empty datasets safely
+	maxDuration := 0.0
+	if len(durations) > 0 {
+		maxDuration = durations[0].duration
+		if len(durations) > 1 && maxDuration > durations[1].duration*3 {
+			// If top test is 3x longer than second, use second test as scale to prevent skewed visualization
+			maxDuration = durations[1].duration * 1.5
+		}
+		if maxDuration <= 0 {
+			// Avoid division by zero; fallback to 1s scale when all durations are zero
+			maxDuration = 1.0
+		}
 	}
 
 	// Take top 15 longest tests (increased from 10)
@@ -434,9 +448,17 @@ func generateMarkdownReport(data *ReportData) string {
 		// Add bar chart using unicode block characters
 		durationBar := ""
 		scaleFactor := 25.0
-		barLength := max(int(d.duration*scaleFactor/maxDuration), 1)
-		for range barLength {
-			durationBar += "█"
+		if maxDuration <= 0 {
+			// Nothing to chart
+			durationBar = ""
+		} else {
+			barLength := int(d.duration * scaleFactor / maxDuration)
+			if barLength < 1 && d.duration > 0 {
+				barLength = 1
+			}
+			if barLength > 0 {
+				durationBar = strings.Repeat("█", barLength)
+			}
 		}
 
 		sb.WriteString(fmt.Sprintf("| %s | %.3fs %s |\n", displayName, d.duration, durationBar))
